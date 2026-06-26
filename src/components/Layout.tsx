@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, MapPin, Clock, LogOut, Shield, ClipboardList } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-hot-toast';
 
 export default function Layout() {
   const { dbUser, logout } = useAuth();
@@ -9,6 +10,7 @@ export default function Layout() {
 
   const handleLogout = () => {
     logout();
+    toast.success('Anda telah berhasil keluar dari sistem');
   };
 
   const navItems = [

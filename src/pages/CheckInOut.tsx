@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { collection, getDocs, query, where, addDoc, updateDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import { MapPin, Camera, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-hot-toast';
 
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371e3; // Radius of the earth in m
@@ -253,7 +254,9 @@ export default function CheckInOut() {
           status: status,
           created_at: serverTimestamp()
         });
-        setMessage(`Absen masuk berhasil (${status})`);
+        const msg = `Absen masuk berhasil (${status})`;
+        setMessage(msg);
+        toast.success(msg);
       } else {
         if (existing.empty) {
           throw new Error('Anda belum absen masuk hari ini');
@@ -272,10 +275,14 @@ export default function CheckInOut() {
           selfie_pulang: watermarkedImageSrc,
           updated_at: serverTimestamp()
         });
-        setMessage('Absen pulang berhasil');
+        const msg = 'Absen pulang berhasil';
+        setMessage(msg);
+        toast.success(msg);
       }
     } catch (err: any) {
-      setError(err.message || 'Terjadi kesalahan');
+      const errMsg = err.message || 'Terjadi kesalahan';
+      setError(errMsg);
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }

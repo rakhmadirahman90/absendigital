@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Building2 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function Login() {
   const [waNumber, setWaNumber] = useState('');
@@ -29,7 +30,9 @@ export default function Login() {
 
     try {
       if (isForgotPassword) {
-         setMessage('Silakan hubungi HR atau Administrator untuk mereset password Anda.');
+         const infoMsg = 'Silakan hubungi HR atau Administrator untuk mereset password Anda.';
+         setMessage(infoMsg);
+         toast.success(infoMsg, { duration: 5000 });
          setIsForgotPassword(false);
       } else if (isRegister) {
          const q = query(collection(db, "users"), where("waNumber", "==", cleanWaNumber));
@@ -52,6 +55,7 @@ export default function Login() {
          };
          
          await setDoc(doc(db, "users", userId), userData);
+         toast.success('Pendaftaran berhasil! Selamat datang.');
          login({ uid: userId, ...userData });
       } else {
          const q = query(collection(db, "users"), where("waNumber", "==", cleanWaNumber));
@@ -68,10 +72,12 @@ export default function Login() {
             throw new Error('Nomor WA atau password salah.');
          }
          
+         toast.success(`Selamat datang kembali, ${userData.nama || 'Karyawan'}!`);
          login({ uid: userDoc.id, ...userData });
       }
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan.');
+      toast.error(err.message || 'Terjadi kesalahan saat otentikasi.');
     } finally {
       setLoading(false);
     }
