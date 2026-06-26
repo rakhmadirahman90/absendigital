@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, doc, updateDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown } from 'lucide-react';
+import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown, Edit, Trash2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -32,6 +32,27 @@ export default function ApprovalTab() {
         item: any;
         collectionName: string;
     } | null>(null);
+
+    // Edit states
+    const [editItem, setEditItem] = useState<{ item: any; collectionName: string } | null>(null);
+    const [editLeaveForm, setEditLeaveForm] = useState({
+        tipe: 'izin',
+        tanggal_mulai: '',
+        tanggal_akhir: '',
+        alasan: '',
+        status: 'pending',
+        catatan_admin: ''
+    });
+    const [editOvertimeForm, setEditOvertimeForm] = useState({
+        tanggal: '',
+        durasi_jam: 1,
+        keterangan: '',
+        status: 'pending',
+        catatan_admin: ''
+    });
+
+    // Delete states
+    const [deleteData, setDeleteData] = useState<{ id: string; collectionName: string; employeeName: string } | null>(null);
 
     useEffect(() => {
         const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
@@ -79,6 +100,81 @@ export default function ApprovalTab() {
         } finally {
             setActionData(null);
             setAdminRemark('');
+        }
+    };
+
+    const handleStartEdit = (item: any, collectionName: string) => {
+        setEditItem({ item, collectionName });
+        if (collectionName === 'leave_requests') {
+            setEditLeaveForm({
+                tipe: item.tipe || 'izin',
+                tanggal_mulai: item.tanggal_mulai || '',
+                tanggal_akhir: item.tanggal_akhir || '',
+                alasan: item.alasan || '',
+                status: item.status || 'pending',
+                catatan_admin: item.catatan_admin || ''
+            });
+        } else {
+            setEditOvertimeForm({
+                tanggal: item.tanggal || '',
+                durasi_jam: item.durasi_jam || 1,
+                keterangan: item.keterangan || '',
+                status: item.status || 'pending',
+                catatan_admin: item.catatan_admin || ''
+            });
+        }
+    };
+
+    const handleSaveEdit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editItem) return;
+        const { item, collectionName } = editItem;
+        try {
+            if (collectionName === 'leave_requests') {
+                if (editLeaveForm.tanggal_mulai > editLeaveForm.tanggal_akhir) {
+                    toast.error('Tanggal mulai tidak boleh melebihi tanggal akhir.');
+                    return;
+                }
+                await updateDoc(doc(db, 'leave_requests', item.id), {
+                    tipe: editLeaveForm.tipe,
+                    tanggal_mulai: editLeaveForm.tanggal_mulai,
+                    tanggal_akhir: editLeaveForm.tanggal_akhir,
+                    alasan: editLeaveForm.alasan.trim(),
+                    status: editLeaveForm.status,
+                    catatan_admin: editLeaveForm.catatan_admin.trim()
+                });
+            } else {
+                if (editOvertimeForm.durasi_jam <= 0) {
+                    toast.error('Durasi jam lembur harus lebih besar dari 0.');
+                    return;
+                }
+                await updateDoc(doc(db, 'overtime', item.id), {
+                    tanggal: editOvertimeForm.tanggal,
+                    durasi_jam: Number(editOvertimeForm.durasi_jam),
+                    keterangan: editOvertimeForm.keterangan.trim(),
+                    status: editOvertimeForm.status,
+                    catatan_admin: editOvertimeForm.catatan_admin.trim()
+                });
+            }
+            toast.success('Pengajuan berhasil diperbarui');
+            setEditItem(null);
+        } catch (error) {
+            console.error(error);
+            toast.error('Gagal memperbarui pengajuan');
+        }
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!deleteData) return;
+        const { id, collectionName } = deleteData;
+        try {
+            await deleteDoc(doc(db, collectionName, id));
+            toast.success('Pengajuan berhasil dihapus');
+        } catch (error) {
+            console.error(error);
+            toast.error('Gagal menghapus pengajuan');
+        } finally {
+            setDeleteData(null);
         }
     };
 
@@ -245,7 +341,7 @@ export default function ApprovalTab() {
                                                     </span>
                                                 </td>
                                                 <td className="p-4">
-                                                    <div className="flex justify-end gap-1.5">
+                                                    <div className="flex justify-end items-center gap-1.5 flex-wrap">
                                                         {item.status === 'pending' ? (
                                                             <>
                                                                 <button 
@@ -272,9 +368,26 @@ export default function ApprovalTab() {
                                                                 <RefreshCw size={14} />
                                                             </button>
                                                         )}
+
+                                                        <button
+                                                            onClick={() => handleStartEdit(item, 'leave_requests')}
+                                                            className="w-9 h-9 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg border border-slate-100 shadow-sm transition-colors"
+                                                            title="Edit Pengajuan"
+                                                        >
+                                                            <Edit size={15} />
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => setDeleteData({ id: item.id, collectionName: 'leave_requests', employeeName: user.nama || 'Karyawan' })}
+                                                            className="w-9 h-9 flex items-center justify-center text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-100 shadow-sm transition-colors"
+                                                            title="Hapus Pengajuan"
+                                                        >
+                                                            <Trash2 size={15} />
+                                                        </button>
+
                                                         <button
                                                             onClick={() => setDetailItem({ item, collectionName: 'leave_requests' })}
-                                                            className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors"
+                                                            className="px-2.5 h-9 text-xs font-semibold text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors flex items-center justify-center"
                                                         >
                                                             Detail
                                                         </button>
@@ -346,7 +459,7 @@ export default function ApprovalTab() {
                                                     </span>
                                                 </td>
                                                 <td className="p-4">
-                                                    <div className="flex justify-end gap-1.5">
+                                                    <div className="flex justify-end items-center gap-1.5 flex-wrap">
                                                         {item.status === 'pending' ? (
                                                             <>
                                                                 <button 
@@ -373,9 +486,26 @@ export default function ApprovalTab() {
                                                                 <RefreshCw size={14} />
                                                             </button>
                                                         )}
+
+                                                        <button
+                                                            onClick={() => handleStartEdit(item, 'overtime')}
+                                                            className="w-9 h-9 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg border border-slate-100 shadow-sm transition-colors"
+                                                            title="Edit Pengajuan"
+                                                        >
+                                                            <Edit size={15} />
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => setDeleteData({ id: item.id, collectionName: 'overtime', employeeName: user.nama || 'Karyawan' })}
+                                                            className="w-9 h-9 flex items-center justify-center text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-100 shadow-sm transition-colors"
+                                                            title="Hapus Pengajuan"
+                                                        >
+                                                            <Trash2 size={15} />
+                                                        </button>
+
                                                         <button
                                                             onClick={() => setDetailItem({ item, collectionName: 'overtime' })}
-                                                            className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors"
+                                                            className="px-2.5 h-9 text-xs font-semibold text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors flex items-center justify-center"
                                                         >
                                                             Detail
                                                         </button>
@@ -572,6 +702,214 @@ export default function ApprovalTab() {
                     </div>
                 );
             })()}
+
+            {/* Edit Modal */}
+            {editItem && (() => {
+                const { item, collectionName } = editItem;
+                const user = usersMap[item.user_id] || {};
+                return (
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                            {/* Modal Header */}
+                            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                                <div>
+                                    <h4 className="font-bold text-slate-800">Edit Pengajuan</h4>
+                                    <p className="text-xs text-slate-400 mt-0.5">Milik: {user.nama || 'Karyawan'}</p>
+                                </div>
+                                <button 
+                                    onClick={() => setEditItem(null)} 
+                                    className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200/50 rounded-lg transition-all"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            
+                            {/* Modal Form */}
+                            <form onSubmit={handleSaveEdit}>
+                                <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                                    {collectionName === 'leave_requests' ? (
+                                        <>
+                                            {/* Tipe Leave */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tipe Pengajuan</label>
+                                                <select
+                                                    value={editLeaveForm.tipe}
+                                                    onChange={(e) => setEditLeaveForm(prev => ({ ...prev, tipe: e.target.value }))}
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                    required
+                                                >
+                                                    <option value="izin">Izin</option>
+                                                    <option value="sakit">Sakit</option>
+                                                    <option value="cuti">Cuti</option>
+                                                </select>
+                                            </div>
+
+                                            {/* Tanggal Mulai & Akhir */}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Mulai</label>
+                                                    <input
+                                                        type="date"
+                                                        value={editLeaveForm.tanggal_mulai}
+                                                        onChange={(e) => setEditLeaveForm(prev => ({ ...prev, tanggal_mulai: e.target.value }))}
+                                                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                        required
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Akhir</label>
+                                                    <input
+                                                        type="date"
+                                                        value={editLeaveForm.tanggal_akhir}
+                                                        onChange={(e) => setEditLeaveForm(prev => ({ ...prev, tanggal_akhir: e.target.value }))}
+                                                        className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Alasan */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Alasan Pengajuan</label>
+                                                <textarea
+                                                    rows={3}
+                                                    value={editLeaveForm.alasan}
+                                                    onChange={(e) => setEditLeaveForm(prev => ({ ...prev, alasan: e.target.value }))}
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                    required
+                                                ></textarea>
+                                            </div>
+
+                                            {/* Status */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Status Persetujuan</label>
+                                                <select
+                                                    value={editLeaveForm.status}
+                                                    onChange={(e) => setEditLeaveForm(prev => ({ ...prev, status: e.target.value }))}
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                    required
+                                                >
+                                                    <option value="pending">Menunggu (Pending)</option>
+                                                    <option value="approved">Disetujui (Approved)</option>
+                                                    <option value="rejected">Ditolak (Rejected)</option>
+                                                </select>
+                                            </div>
+
+                                            {/* Catatan Admin */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Catatan Admin</label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={editLeaveForm.catatan_admin}
+                                                    onChange={(e) => setEditLeaveForm(prev => ({ ...prev, catatan_admin: e.target.value }))}
+                                                    placeholder="Tulis alasan atau tanggapan perihal status pengajuan..."
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                ></textarea>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {/* Tanggal Lembur */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Lembur</label>
+                                                <input
+                                                    type="date"
+                                                    value={editOvertimeForm.tanggal}
+                                                    onChange={(e) => setEditOvertimeForm(prev => ({ ...prev, tanggal: e.target.value }))}
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                    required
+                                                />
+                                            </div>
+
+                                            {/* Durasi Kerja */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Durasi Kerja (Jam)</label>
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    max={24}
+                                                    value={editOvertimeForm.durasi_jam}
+                                                    onChange={(e) => setEditOvertimeForm(prev => ({ ...prev, durasi_jam: Number(e.target.value) }))}
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                    required
+                                                />
+                                            </div>
+
+                                            {/* Keterangan */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Keterangan Aktivitas</label>
+                                                <textarea
+                                                    rows={3}
+                                                    value={editOvertimeForm.keterangan}
+                                                    onChange={(e) => setEditOvertimeForm(prev => ({ ...prev, keterangan: e.target.value }))}
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                    required
+                                                ></textarea>
+                                            </div>
+
+                                            {/* Status */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Status Persetujuan</label>
+                                                <select
+                                                    value={editOvertimeForm.status}
+                                                    onChange={(e) => setEditOvertimeForm(prev => ({ ...prev, status: e.target.value }))}
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                    required
+                                                >
+                                                    <option value="pending">Menunggu (Pending)</option>
+                                                    <option value="approved">Disetujui (Approved)</option>
+                                                    <option value="rejected">Ditolak (Rejected)</option>
+                                                </select>
+                                            </div>
+
+                                            {/* Catatan Admin */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Catatan Admin</label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={editOvertimeForm.catatan_admin}
+                                                    onChange={(e) => setEditOvertimeForm(prev => ({ ...prev, catatan_admin: e.target.value }))}
+                                                    placeholder="Tulis alasan atau tanggapan perihal status pengajuan..."
+                                                    className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-700 bg-white"
+                                                ></textarea>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                                
+                                {/* Modal Footer */}
+                                <div className="p-4 border-t border-slate-100 flex justify-end gap-2.5 bg-slate-50">
+                                    <button 
+                                        type="button"
+                                        onClick={() => setEditItem(null)} 
+                                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+                                    >
+                                        Batal
+                                    </button>
+                                    <button 
+                                        type="submit"
+                                        className="px-4 py-2 bg-blue-600 text-white font-semibold hover:bg-blue-700 rounded-lg transition-all text-sm shadow-sm"
+                                    >
+                                        Simpan Perubahan
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Confirm Delete Dialog */}
+            <ConfirmDialog
+                isOpen={!!deleteData}
+                title="Hapus Pengajuan"
+                message={`Apakah Anda yakin ingin menghapus permanen pengajuan dari ${deleteData?.employeeName || 'Karyawan'}? Tindakan ini tidak dapat dibatalkan.`}
+                confirmText="Hapus Permanen"
+                cancelText="Batal"
+                isDestructive={true}
+                onConfirm={handleDeleteConfirm}
+                onCancel={() => setDeleteData(null)}
+            />
         </div>
     );
 }
