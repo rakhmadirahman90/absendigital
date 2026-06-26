@@ -27,13 +27,26 @@ function drawWatermark(
 ): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
+    
+    // Safety timeout of 2.5 seconds to fallback to original image in case onload hangs
+    const timeoutId = setTimeout(() => {
+      console.warn('Watermark timeout: falling back to raw image');
+      resolve(imageSrc);
+    }, 2500);
+
     if (imageSrc.startsWith('http')) {
       img.crossOrigin = 'anonymous';
     }
+    
     img.onload = () => {
+      clearTimeout(timeoutId);
+      
+      const width = img.width || 640;
+      const height = img.height || 480;
+      
       const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         resolve(imageSrc);
@@ -41,15 +54,15 @@ function drawWatermark(
       }
       
       // Draw original photo
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, width, height);
       
       // Translucent slate background at the bottom
       const heightPercentage = 0.22;
-      const boxHeight = canvas.height * heightPercentage;
-      const boxY = canvas.height - boxHeight;
+      const boxHeight = height * heightPercentage;
+      const boxY = height - boxHeight;
       
       ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'; // slate-900 with opacity
-      ctx.fillRect(0, boxY, canvas.width, boxHeight);
+      ctx.fillRect(0, boxY, width, boxHeight);
       
       // Blue vertical status line on the left side of the watermark box
       ctx.fillStyle = '#3b82f6';
@@ -59,8 +72,8 @@ function drawWatermark(
       ctx.fillStyle = '#ffffff';
       
       // Determine font sizes based on canvas size
-      const titleFontSize = Math.max(12, Math.floor(canvas.width * 0.038));
-      const textFontSize = Math.max(10, Math.floor(canvas.width * 0.032));
+      const titleFontSize = Math.max(12, Math.floor(width * 0.038));
+      const textFontSize = Math.max(10, Math.floor(width * 0.032));
       
       // Title / info line
       ctx.font = `bold ${titleFontSize}px system-ui, -apple-system, sans-serif`;
@@ -70,7 +83,7 @@ function drawWatermark(
       ctx.font = `normal ${textFontSize}px system-ui, -apple-system, sans-serif`;
       ctx.fillStyle = '#cbd5e1'; // slate-300
       
-      const maxTextWidth = canvas.width - (padding * 2) - 14;
+      const maxTextWidth = width - (padding * 2) - 14;
       const addressText = `Lokasi: ${address}`;
       
       const words = addressText.split(' ');
@@ -86,7 +99,7 @@ function drawWatermark(
           ctx.fillText(line, padding + 6, yOffset);
           line = words[n] + ' ';
           yOffset += lineHeight;
-          if (yOffset > canvas.height - 8) break;
+          if (yOffset > height - 8) break;
         } else {
           line = testLine;
         }
@@ -96,6 +109,7 @@ function drawWatermark(
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
     img.onerror = () => {
+      clearTimeout(timeoutId);
       resolve(imageSrc);
     };
     img.src = imageSrc;
@@ -131,6 +145,24 @@ export default function CheckInOut() {
       });
 
       const { latitude, longitude } = position.coords;
+      
+      const video = webcamRef.current?.video;
+      if (!video) {
+        throw new Error('Kamera belum siap. Mohon tunggu beberapa saat.');
+      }
+
+      if (video.paused) {
+        try {
+          await video.play();
+        } catch (playErr) {
+          console.error('Gagal memulai streaming kamera secara manual:', playErr);
+        }
+      }
+
+      if (video.readyState < 2) {
+        throw new Error('Kamera sedang memuat aliran video. Silakan coba lagi dalam beberapa detik.');
+      }
+
       const rawImageSrc = webcamRef.current?.getScreenshot();
 
       if (!rawImageSrc) {
@@ -262,6 +294,9 @@ export default function CheckInOut() {
             screenshotFormat="image/jpeg"
             videoConstraints={{ facingMode: "user" }}
             className="object-cover w-full h-full"
+            playsInline={true}
+            autoPlay={true}
+            muted={true}
           />
           <div className="absolute bottom-4 left-0 right-0 flex justify-center text-white">
             <div className="bg-black/50 px-3 py-1.5 rounded-full flex items-center space-x-2 text-sm backdrop-blur-sm">
