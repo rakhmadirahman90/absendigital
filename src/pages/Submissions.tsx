@@ -26,6 +26,8 @@ type TipeIzin = 'izin' | 'sakit' | 'cuti';
 export default function Submissions() {
   const { user } = useAuth();
   
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  
   const [activeSubTab, setActiveSubTab] = useState<'leave' | 'overtime'>('leave');
   const [leaveSubmissions, setLeaveSubmissions] = useState<any[]>([]);
   const [overtimeSubmissions, setOvertimeSubmissions] = useState<any[]>([]);
@@ -115,6 +117,11 @@ export default function Submissions() {
       return;
     }
 
+    if (tanggal_mulai < todayStr) {
+      toast.error('Tanggal mulai tidak boleh hari kemarin atau sebelumnya.');
+      return;
+    }
+
     try {
       await addDoc(collection(db, 'leave_requests'), {
         user_id: user.uid,
@@ -155,6 +162,11 @@ export default function Submissions() {
 
     if (durasi_jam <= 0) {
       toast.error('Durasi jam lembur harus lebih besar dari 0.');
+      return;
+    }
+
+    if (tanggal < todayStr) {
+      toast.error('Tanggal lembur tidak boleh hari kemarin atau sebelumnya.');
       return;
     }
 
@@ -512,6 +524,7 @@ export default function Submissions() {
                       type="date"
                       id="tanggal_mulai"
                       required
+                      min={todayStr}
                       value={leaveForm.tanggal_mulai}
                       onChange={(e) => setLeaveForm(prev => ({ ...prev, tanggal_mulai: e.target.value }))}
                       className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-slate-700 bg-white"
@@ -523,6 +536,7 @@ export default function Submissions() {
                       type="date"
                       id="tanggal_akhir"
                       required
+                      min={leaveForm.tanggal_mulai || todayStr}
                       value={leaveForm.tanggal_akhir}
                       onChange={(e) => setLeaveForm(prev => ({ ...prev, tanggal_akhir: e.target.value }))}
                       className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-slate-700 bg-white"
@@ -597,6 +611,7 @@ export default function Submissions() {
                     type="date"
                     id="overtime_tanggal"
                     required
+                    min={todayStr}
                     value={overtimeForm.tanggal}
                     onChange={(e) => setOvertimeForm(prev => ({ ...prev, tanggal: e.target.value }))}
                     className="w-full p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm text-slate-700 bg-white"
