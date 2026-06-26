@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import { db } from '../lib/firebase';
 import { collection, getDocs, query, where, addDoc, updateDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
-import { MapPin, Camera, CheckCircle2, AlertCircle } from 'lucide-react';
+import { MapPin, Camera, CheckCircle2, AlertCircle, RefreshCw, Navigation, Compass, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
+import RealTimeClock from '../components/RealTimeClock';
 
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371e3; // Radius of the earth in m
@@ -118,11 +119,147 @@ function drawWatermark(
 }
 
 export default function CheckInOut() {
-  const { user } = useAuth();
+  const { user, dbUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const webcamRef = useRef<Webcam>(null);
+
+  interface OfficeLocation {
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    radius: number;
+  }
+
+  // Office GPS configurations & interactive verification state
+  const [offices, setOffices] = useState<OfficeLocation[]>([]);
+  const [nearestOffice, setNearestOffice] = useState<OfficeLocation | null>(null);
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [distanceFromOffice, setDistanceFromOffice] = useState<number | null>(null);
+  const [checkingLocation, setCheckingLocation] = useState(false);
+  const [isWithinRadius, setIsWithinRadius] = useState<boolean | null>(null);
+
+  // Helper to find closest office and determine validation
+  const evaluateLocations = (userLat: number, userLng: number, officesList: OfficeLocation[]) => {
+    if (officesList.length === 0) return;
+
+    let nearest: OfficeLocation | null = null;
+    let minDistance = Infinity;
+    let withinAny = false;
+    let matchedOffice: OfficeLocation | null = null;
+
+    officesList.forEach((office) => {
+      const dist = getDistanceFromLatLonInM(userLat, userLng, office.latitude, office.longitude);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearest = office;
+      }
+      if (dist <= (office.radius || 100)) {
+        withinAny = true;
+        if (!matchedOffice || dist < getDistanceFromLatLonInM(userLat, userLng, matchedOffice.latitude, matchedOffice.longitude)) {
+          matchedOffice = office;
+        }
+      }
+    });
+
+    const activeOffice = matchedOffice || nearest;
+    if (activeOffice) {
+      const activeDist = getDistanceFromLatLonInM(userLat, userLng, activeOffice.latitude, activeOffice.longitude);
+      setNearestOffice(activeOffice);
+      setDistanceFromOffice(activeDist);
+      setIsWithinRadius(withinAny);
+    }
+  };
+
+  // Load office configurations and user location on component mount
+  useEffect(() => {
+    const loadOfficeAndLocation = async () => {
+      setCheckingLocation(true);
+      try {
+        const officeDocRef = doc(db, 'settings', 'office_location');
+        const officeSnap = await getDoc(officeDocRef);
+        if (officeSnap.exists()) {
+          const officeData = officeSnap.data();
+          let officesList: OfficeLocation[] = [];
+
+          if (officeData.offices && Array.isArray(officeData.offices)) {
+            officesList = officeData.offices;
+          } else if (officeData.latitude && officeData.longitude) {
+            // Fallback for single office
+            officesList = [{
+              id: 'default',
+              name: officeData.name || 'Kantor Pusat',
+              latitude: Number(officeData.latitude),
+              longitude: Number(officeData.longitude),
+              radius: Number(officeData.radius || 100)
+            }];
+          }
+
+          // Filter offices list if user is restricted to a specific office
+          if (dbUser && dbUser.assignedOfficeId && dbUser.assignedOfficeId !== 'all') {
+            officesList = officesList.filter(o => o.id === dbUser.assignedOfficeId);
+          }
+
+          setOffices(officesList);
+          
+          if (navigator.geolocation && officesList.length > 0) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                const { latitude, longitude } = position.coords;
+                setUserLocation({ latitude, longitude });
+                evaluateLocations(latitude, longitude, officesList);
+                setCheckingLocation(false);
+              },
+              (err) => {
+                console.error('Gagal mendapatkan lokasi saat render awal:', err);
+                setCheckingLocation(false);
+              },
+              { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+            );
+          } else {
+            setCheckingLocation(false);
+          }
+        } else {
+          setCheckingLocation(false);
+        }
+      } catch (err) {
+        console.error('Error loading settings:', err);
+        setCheckingLocation(false);
+      }
+    };
+
+    loadOfficeAndLocation();
+  }, [dbUser]);
+
+  const refreshLocation = () => {
+    if (offices.length === 0) {
+      toast.error('Pengaturan lokasi kantor tidak ditemukan');
+      return;
+    }
+    setCheckingLocation(true);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setUserLocation({ latitude, longitude });
+          evaluateLocations(latitude, longitude, offices);
+          setCheckingLocation(false);
+          toast.success('Lokasi berhasil diperbarui');
+        },
+        (err) => {
+          console.error('Gagal menyegarkan lokasi:', err);
+          setCheckingLocation(false);
+          toast.error('Gagal menyegarkan lokasi. Pastikan izin lokasi aktif.');
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      );
+    } else {
+      setCheckingLocation(false);
+      toast.error('Geolokasi tidak didukung oleh browser Anda');
+    }
+  };
 
   const captureAndLocate = async (type: 'checkin' | 'checkout') => {
     setLoading(true);
@@ -223,11 +360,68 @@ export default function CheckInOut() {
         throw new Error('Pengaturan lokasi kantor belum diatur oleh admin.');
       }
       
-      const office = officeSnap.data();
-      const distance = getDistanceFromLatLonInM(latitude, longitude, office.latitude, office.longitude);
-      
-      if (distance > (office.radius || 100)) {
-        throw new Error('Di luar radius kantor');
+      const officeData = officeSnap.data();
+      let officesList: OfficeLocation[] = [];
+
+      if (officeData.offices && Array.isArray(officeData.offices)) {
+        officesList = officeData.offices;
+      } else if (officeData.latitude && officeData.longitude) {
+        officesList = [{
+          id: 'default',
+          name: officeData.name || 'Kantor Pusat',
+          latitude: Number(officeData.latitude),
+          longitude: Number(officeData.longitude),
+          radius: Number(officeData.radius || 100)
+        }];
+      }
+
+      // Filter offices list if user is restricted to a specific office
+      if (dbUser && dbUser.assignedOfficeId && dbUser.assignedOfficeId !== 'all') {
+        officesList = officesList.filter(o => o.id === dbUser.assignedOfficeId);
+        if (officesList.length === 0) {
+          throw new Error('Kantor khusus yang ditugaskan kepada Anda tidak ditemukan atau telah dihapus. Hubungi admin.');
+        }
+      }
+
+      if (officesList.length === 0) {
+        throw new Error('Lokasi kantor belum dikonfigurasi oleh admin.');
+      }
+
+      setUserLocation({ latitude, longitude });
+
+      let nearest: OfficeLocation | null = null;
+      let minDistance = Infinity;
+      let withinAny = false;
+      let matchedOffice: OfficeLocation | null = null;
+
+      officesList.forEach((office) => {
+        const dist = getDistanceFromLatLonInM(latitude, longitude, office.latitude, office.longitude);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearest = office;
+        }
+        if (dist <= (office.radius || 100)) {
+          withinAny = true;
+          if (!matchedOffice || dist < getDistanceFromLatLonInM(latitude, longitude, matchedOffice.latitude, matchedOffice.longitude)) {
+            matchedOffice = office;
+          }
+        }
+      });
+
+      const activeOffice = matchedOffice || nearest;
+      if (activeOffice) {
+        const activeDist = getDistanceFromLatLonInM(latitude, longitude, activeOffice.latitude, activeOffice.longitude);
+        setNearestOffice(activeOffice);
+        setDistanceFromOffice(activeDist);
+        setIsWithinRadius(withinAny);
+      }
+
+      if (!withinAny) {
+        if (activeOffice) {
+          throw new Error(`Di luar radius kantor. Kantor terdekat: "${activeOffice.name}". Jarak Anda: ${Math.round(minDistance)} meter (Maksimal radius diperbolehkan: ${activeOffice.radius || 100} meter).`);
+        } else {
+          throw new Error('Di luar radius kantor.');
+        }
       }
 
       if (type === 'checkin') {
@@ -289,9 +483,129 @@ export default function CheckInOut() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800">Absensi Kehadiran</h2>
-      
+    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Absensi Kehadiran</h2>
+          <p className="text-xs text-slate-500 mt-1">Gunakan kamera depan dan aktifkan lokasi GPS Anda untuk melakukan presensi.</p>
+        </div>
+        
+        {offices.length > 0 && (
+          <button
+            onClick={refreshLocation}
+            disabled={checkingLocation || loading}
+            className="self-start sm:self-center flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded-xl transition-all disabled:opacity-50 shadow-sm"
+          >
+            <RefreshCw size={12} className={`transition-transform duration-500 ${checkingLocation ? 'animate-spin' : ''}`} />
+            <span>Segarkan Jarak GPS</span>
+          </button>
+        )}
+      </div>
+
+      {/* Real-time Digital Clock Banner */}
+      <RealTimeClock variant="banner" />
+
+      {/* Geofencing Live Validation Card */}
+      {offices.length > 0 && (
+        <div className="bg-gradient-to-r from-slate-50 to-slate-100/50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Compass size={16} className="text-blue-600 animate-pulse" />
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Validasi Jarak Kantor</h3>
+            </div>
+            
+            {checkingLocation ? (
+              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                <RefreshCw size={8} className="animate-spin" />
+                Mencari GPS...
+              </span>
+            ) : isWithinRadius === true ? (
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100">
+                Dalam Radius Kantor
+              </span>
+            ) : isWithinRadius === false ? (
+              <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-100">
+                Di Luar Radius Kantor
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                Menunggu GPS...
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Left Col: Office Bounds Configuration */}
+            <div className="space-y-1 bg-white p-3 rounded-xl border border-slate-200/60">
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                {nearestOffice ? `Kantor Terdekat: ${nearestOffice.name}` : 'Acuan Kantor'}
+              </p>
+              {nearestOffice ? (
+                <>
+                  <div className="text-xs text-slate-700 font-mono flex items-center gap-1">
+                    <MapPin size={12} className="text-slate-400 shrink-0" />
+                    <span>{nearestOffice.latitude.toFixed(6)}, {nearestOffice.longitude.toFixed(6)}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Radius Absen Maksimal: <strong className="text-slate-700">{nearestOffice.radius} meter</strong>
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-slate-400 italic">Mencari kantor terdekat...</p>
+              )}
+            </div>
+
+            {/* Right Col: User Current Distance info */}
+            <div className="space-y-1 bg-white p-3 rounded-xl border border-slate-200/60">
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Posisi GPS Anda</p>
+              {checkingLocation ? (
+                <div className="text-xs text-slate-400 italic">Mencari koordinat Anda...</div>
+              ) : userLocation ? (
+                <>
+                  <div className="text-xs text-slate-700 font-mono flex items-center gap-1">
+                    <Navigation size={12} className="text-slate-400 shrink-0" />
+                    <span>{userLocation.latitude.toFixed(6)}, {userLocation.longitude.toFixed(6)}</span>
+                  </div>
+                  {distanceFromOffice !== null && (
+                    <p className="text-[11px]">
+                      Jarak Anda saat ini:{' '}
+                      <strong className={isWithinRadius ? 'text-emerald-600' : 'text-rose-600'}>
+                        {Math.round(distanceFromOffice)} meter
+                      </strong>{' '}
+                      {isWithinRadius ? '(Aman)' : '(Terlalu Jauh!)'}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-slate-500">Gagal mendeteksi lokasi otomatis.</p>
+                  <button onClick={refreshLocation} className="text-[10px] text-blue-600 hover:underline text-left font-bold">
+                    Izinkan Akses Lokasi & Coba Lagi
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Alert Message for UX guidance */}
+          {!checkingLocation && isWithinRadius === false && (
+            <div className="p-3 bg-amber-50 text-amber-800 text-xs rounded-xl border border-amber-100 flex items-start gap-2">
+              <Info size={15} className="shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <p className="font-semibold">Perhatian: Anda Berada di Luar Jangkauan Kantor</p>
+                <p className="text-[11px] text-amber-700 mt-0.5">
+                  {nearestOffice ? (
+                    <>Anda berjarak {distanceFromOffice ? Math.round(distanceFromOffice) : ''} meter dari <strong>{nearestOffice.name}</strong>. Silakan mendekat ke lokasi tersebut dalam radius {nearestOffice.radius} meter untuk melakukan absensi kehadiran.</>
+                  ) : (
+                    <>Anda berada di luar jangkauan radius kantor mana pun. Silakan mendekat ke salah satu lokasi kantor yang telah ditentukan oleh admin.</>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col items-center">
         <div className="relative w-full max-w-sm aspect-[3/4] bg-slate-100 rounded-xl overflow-hidden mb-6">
           {/* @ts-ignore */}
