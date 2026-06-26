@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Home, MapPin, Clock, LogOut, Shield } from 'lucide-react';
+import { Home, MapPin, Clock, LogOut, Shield, ClipboardList } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout() {
@@ -19,6 +19,7 @@ export default function Layout() {
     navItems.push({ name: 'Admin', path: '/admin', icon: Shield });
   } else {
     navItems.push({ name: 'Absen', path: '/checkinout', icon: MapPin });
+    navItems.push({ name: 'Pengajuan', path: '/submissions', icon: ClipboardList });
     navItems.push({ name: 'Riwayat', path: '/history', icon: Clock });
   }
 

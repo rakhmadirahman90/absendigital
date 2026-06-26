@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import CheckInOut from './pages/CheckInOut';
 import History from './pages/History';
+import Submissions from './pages/Submissions';
 import AdminDashboard from './pages/AdminDashboard';
 import Layout from './components/Layout';
 
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/checkinout" element={<CheckInOut />} />
             <Route path="/history" element={<History />} />
+            <Route path="/submissions" element={<Submissions />} />
             <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
           </Route>
         </Routes>
