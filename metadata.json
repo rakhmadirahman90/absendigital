@@ -1,0 +1,11 @@
+{
+  "name": "HRIS Absensi",
+  "description": "Sistem Absensi Karyawan dengan validasi lokasi dan foto selfie.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

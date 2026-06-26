@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile",
+      "type": "object",
+      "properties": {
+        "waNumber": { "type": "string" },
+        "password": { "type": "string" },
+        "nama": { "type": "string" },
+        "role": { "type": "string" },
+        "jabatan": { "type": "string" },
+        "divisi": { "type": "string" }
+      }
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Attendance record",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "tanggal": { "type": "string" },
+        "jam_masuk": { "type": "string" },
+        "latitude_masuk": { "type": "number" },
+        "longitude_masuk": { "type": "number" },
+        "selfie_masuk": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Users"
+    },
+    "attendance": {
+      "schema": { "$ref": "#/entities/Attendance" },
+      "description": "Attendance"
+    }
+  }
+}
