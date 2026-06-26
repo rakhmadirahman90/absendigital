@@ -13,12 +13,13 @@ export default function Layout() {
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: Home },
-    { name: 'Absen', path: '/checkinout', icon: MapPin },
-    { name: 'Riwayat', path: '/history', icon: Clock },
   ];
 
   if (dbUser?.role === 'admin') {
     navItems.push({ name: 'Admin', path: '/admin', icon: Shield });
+  } else {
+    navItems.push({ name: 'Absen', path: '/checkinout', icon: MapPin });
+    navItems.push({ name: 'Riwayat', path: '/history', icon: Clock });
   }
 
   return (

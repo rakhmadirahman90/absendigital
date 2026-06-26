@@ -18,6 +18,90 @@ function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2
   return d;
 }
 
+function drawWatermark(
+  imageSrc: string,
+  timestampStr: string,
+  lat: number,
+  lng: number,
+  address: string
+): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    if (imageSrc.startsWith('http')) {
+      img.crossOrigin = 'anonymous';
+    }
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(imageSrc);
+        return;
+      }
+      
+      // Draw original photo
+      ctx.drawImage(img, 0, 0);
+      
+      // Translucent slate background at the bottom
+      const heightPercentage = 0.22;
+      const boxHeight = canvas.height * heightPercentage;
+      const boxY = canvas.height - boxHeight;
+      
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'; // slate-900 with opacity
+      ctx.fillRect(0, boxY, canvas.width, boxHeight);
+      
+      // Blue vertical status line on the left side of the watermark box
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect(0, boxY, 6, boxHeight);
+      
+      const padding = 16;
+      ctx.fillStyle = '#ffffff';
+      
+      // Determine font sizes based on canvas size
+      const titleFontSize = Math.max(12, Math.floor(canvas.width * 0.038));
+      const textFontSize = Math.max(10, Math.floor(canvas.width * 0.032));
+      
+      // Title / info line
+      ctx.font = `bold ${titleFontSize}px system-ui, -apple-system, sans-serif`;
+      ctx.fillText(`${timestampStr} | ${lat.toFixed(6)}, ${lng.toFixed(6)}`, padding + 6, boxY + 16);
+      
+      // Address lines
+      ctx.font = `normal ${textFontSize}px system-ui, -apple-system, sans-serif`;
+      ctx.fillStyle = '#cbd5e1'; // slate-300
+      
+      const maxTextWidth = canvas.width - (padding * 2) - 14;
+      const addressText = `Lokasi: ${address}`;
+      
+      const words = addressText.split(' ');
+      let line = '';
+      let yOffset = boxY + 16 + titleFontSize + 10;
+      const lineHeight = textFontSize + 4;
+      
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        const testWidth = metrics.width;
+        if (testWidth > maxTextWidth && n > 0) {
+          ctx.fillText(line, padding + 6, yOffset);
+          line = words[n] + ' ';
+          yOffset += lineHeight;
+          if (yOffset > canvas.height - 8) break;
+        } else {
+          line = testLine;
+        }
+      }
+      ctx.fillText(line, padding + 6, yOffset);
+      
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => {
+      resolve(imageSrc);
+    };
+    img.src = imageSrc;
+  });
+}
+
 export default function CheckInOut() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -37,6 +121,7 @@ export default function CheckInOut() {
         throw new Error('Geolokasi tidak didukung oleh browser Anda');
       }
 
+      setMessage('Mengambil koordinat GPS Anda...');
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy: true,
@@ -46,15 +131,52 @@ export default function CheckInOut() {
       });
 
       const { latitude, longitude } = position.coords;
-      const imageSrc = webcamRef.current?.getScreenshot();
+      const rawImageSrc = webcamRef.current?.getScreenshot();
 
-      if (!imageSrc) {
+      if (!rawImageSrc) {
         throw new Error('Gagal mengambil foto. Pastikan kamera diizinkan.');
       }
 
       const today = new Date();
       const dateStr = today.toISOString().split('T')[0];
       const timeStr = today.toTimeString().split(' ')[0];
+      const timestampLabel = `${dateStr} ${timeStr}`;
+
+      setMessage('Mendeteksi nama lokasi berdasarkan GPS...');
+      
+      let resolvedAddress = 'Koordinat: ' + latitude.toFixed(6) + ', ' + longitude.toFixed(6);
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000); // 4 second timeout
+        
+        const geoResponse = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+          {
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'HRIS-App-AI-Studio',
+              'Accept-Language': 'id,en'
+            }
+          }
+        );
+        clearTimeout(timeoutId);
+        
+        if (geoResponse.ok) {
+          const geoData = await geoResponse.json();
+          resolvedAddress = geoData.display_name || resolvedAddress;
+        }
+      } catch (err) {
+        console.error('Reverse geocoding error:', err);
+      }
+
+      setMessage('Memproses foto & menempelkan watermark...');
+      const watermarkedImageSrc = await drawWatermark(
+        rawImageSrc,
+        timestampLabel,
+        latitude,
+        longitude,
+        resolvedAddress
+      );
 
       const attendanceRef = collection(db, 'attendance');
       const q = query(attendanceRef, where('user_id', '==', user.uid), where('tanggal', '==', dateStr));
@@ -94,7 +216,8 @@ export default function CheckInOut() {
           jam_masuk: timeStr,
           latitude_masuk: latitude,
           longitude_masuk: longitude,
-          selfie_masuk: imageSrc, // Saving base64 for simplicity
+          alamat_masuk: resolvedAddress,
+          selfie_masuk: watermarkedImageSrc,
           status: status,
           created_at: serverTimestamp()
         });
@@ -113,7 +236,8 @@ export default function CheckInOut() {
           jam_pulang: timeStr,
           latitude_pulang: latitude,
           longitude_pulang: longitude,
-          selfie_pulang: imageSrc,
+          alamat_pulang: resolvedAddress,
+          selfie_pulang: watermarkedImageSrc,
           updated_at: serverTimestamp()
         });
         setMessage('Absen pulang berhasil');

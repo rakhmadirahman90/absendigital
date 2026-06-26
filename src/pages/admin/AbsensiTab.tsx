@@ -19,6 +19,7 @@ export default function AbsensiTab() {
     const [editForm, setEditForm] = useState({ jam_masuk: '', jam_pulang: '', status: '' });
     
     const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
     useEffect(() => {
         const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
@@ -150,20 +151,48 @@ export default function AbsensiTab() {
                                             <td className="p-4 text-sm font-mono text-slate-600">{item.jam_masuk || '-'}</td>
                                             <td className="p-4 text-sm font-mono text-slate-600">{item.jam_pulang || '-'}</td>
                                             <td className="p-4 text-sm text-center">
-                                                <div className="flex justify-center space-x-2">
+                                                <div className="flex flex-col items-center justify-center space-y-1">
                                                     {item.latitude_masuk && (
-                                                        <button onClick={() => handleOpenMap(item.latitude_masuk, item.longitude_masuk)} className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Lokasi Masuk">
+                                                        <button 
+                                                            onClick={() => handleOpenMap(item.latitude_masuk, item.longitude_masuk)} 
+                                                            className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
+                                                            title={item.alamat_masuk || "Lokasi Masuk"}
+                                                        >
                                                             <MapPin size={18} />
                                                         </button>
+                                                    )}
+                                                    {item.alamat_masuk && (
+                                                        <span 
+                                                            className="text-[10px] text-slate-500 max-w-[120px] truncate block" 
+                                                            title={item.alamat_masuk}
+                                                        >
+                                                            {item.alamat_masuk}
+                                                        </span>
                                                     )}
                                                 </div>
                                             </td>
                                             <td className="p-4 text-sm text-center">
-                                                {item.selfie_masuk && (
-                                                    <a href={item.selfie_masuk} target="_blank" rel="noreferrer" className="w-10 h-10 inline-flex items-center justify-center text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Lihat Selfie">
-                                                        <ImageIcon size={18} />
-                                                    </a>
-                                                )}
+                                                <div className="flex justify-center gap-1">
+                                                    {item.selfie_masuk && (
+                                                        <button 
+                                                            onClick={() => setViewPhoto(item.selfie_masuk)} 
+                                                            className="w-10 h-10 inline-flex items-center justify-center text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" 
+                                                            title="Lihat Selfie Masuk"
+                                                        >
+                                                            <ImageIcon size={18} />
+                                                        </button>
+                                                    )}
+                                                    {item.selfie_pulang && (
+                                                        <button 
+                                                            onClick={() => setViewPhoto(item.selfie_pulang)} 
+                                                            className="w-10 h-10 inline-flex items-center justify-center text-teal-600 hover:bg-teal-50 rounded-lg transition-colors" 
+                                                            title="Lihat Selfie Pulang"
+                                                        >
+                                                            <ImageIcon size={18} />
+                                                        </button>
+                                                    )}
+                                                    {!item.selfie_masuk && !item.selfie_pulang && <span className="text-slate-400">-</span>}
+                                                </div>
                                             </td>
                                             <td className="p-4 text-sm">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${item.status === 'Terlambat' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
@@ -247,6 +276,37 @@ export default function AbsensiTab() {
                 isDestructive={true}
                 confirmText="Hapus Data"
             />
+
+            {viewPhoto && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                            <h3 className="font-bold text-slate-800">Foto Selfie Absensi</h3>
+                            <button onClick={() => setViewPhoto(null)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-4 flex flex-col items-center bg-slate-100 justify-center">
+                            <div className="relative w-full max-h-[70vh] bg-slate-200 rounded-xl overflow-auto border border-slate-300 shadow-inner flex items-center justify-center">
+                                <img 
+                                    src={viewPhoto} 
+                                    alt="Selfie Absensi" 
+                                    className="max-w-full max-h-[65vh] object-contain rounded-lg"
+                                    referrerPolicy="no-referrer"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 flex justify-end bg-white">
+                            <button 
+                                onClick={() => setViewPhoto(null)} 
+                                className="px-5 py-2 bg-slate-800 text-white font-medium hover:bg-slate-900 rounded-lg transition-colors text-sm shadow-sm"
+                            >
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
