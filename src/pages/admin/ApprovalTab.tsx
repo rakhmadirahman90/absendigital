@@ -207,16 +207,121 @@ export default function ApprovalTab() {
                 <div className="flex bg-slate-200 p-1 rounded-xl w-full sm:w-auto">
                     <button 
                         onClick={() => { setActiveTab('leave'); setFilterType('all'); }} 
-                        className={`flex-1 sm:flex-none px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors ${activeTab === 'leave' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-600 hover:text-slate-800'}`}
+                        className={`flex-1 sm:flex-none px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 ${activeTab === 'leave' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-600 hover:text-slate-800'}`}
                     >
-                        Izin / Sakit / Cuti
+                        <span>Izin / Sakit / Cuti</span>
+                        {leaveRequests.filter(item => item.status === 'pending').length > 0 && (
+                            <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-bounce">
+                                {leaveRequests.filter(item => item.status === 'pending').length}
+                            </span>
+                        )}
                     </button>
                     <button 
                         onClick={() => { setActiveTab('overtime'); setFilterType('all'); }} 
-                        className={`flex-1 sm:flex-none px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors ${activeTab === 'overtime' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-600 hover:text-slate-800'}`}
+                        className={`flex-1 sm:flex-none px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 ${activeTab === 'overtime' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-600 hover:text-slate-800'}`}
                     >
-                        Lembur
+                        <span>Lembur</span>
+                        {overtimeRequests.filter(item => item.status === 'pending').length > 0 && (
+                            <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-bounce">
+                                {overtimeRequests.filter(item => item.status === 'pending').length}
+                            </span>
+                        )}
                     </button>
+                </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Leave Summary */}
+                <div className="bg-gradient-to-br from-white to-slate-50/50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                                <Calendar size={18} />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-slate-800 text-sm">Izin / Sakit / Cuti</h4>
+                                <p className="text-xs text-slate-500">Ringkasan pengajuan absen</p>
+                            </div>
+                        </div>
+                        <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full">
+                            {leaveRequests.length} Total
+                        </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-amber-50/60 hover:bg-amber-50 p-3 rounded-xl border border-amber-100 transition-colors">
+                            <p className="text-[11px] text-amber-600 font-medium">Menunggu</p>
+                            <div className="flex items-baseline gap-1 mt-1">
+                                <span className="text-xl font-bold text-amber-700">
+                                    {leaveRequests.filter(item => item.status === 'pending').length}
+                                </span>
+                                <span className="text-[9px] text-amber-500 font-bold uppercase tracking-wider">Masuk</span>
+                            </div>
+                        </div>
+                        <div className="bg-emerald-50/60 hover:bg-emerald-50 p-3 rounded-xl border border-emerald-100 transition-colors">
+                            <p className="text-[11px] text-emerald-600 font-medium">Disetujui</p>
+                            <div className="flex items-baseline mt-1">
+                                <span className="text-xl font-bold text-emerald-700">
+                                    {leaveRequests.filter(item => item.status === 'approved').length}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="bg-rose-50/60 hover:bg-rose-50 p-3 rounded-xl border border-rose-100 transition-colors">
+                            <p className="text-[11px] text-rose-600 font-medium">Ditolak</p>
+                            <div className="flex items-baseline mt-1">
+                                <span className="text-xl font-bold text-rose-700">
+                                    {leaveRequests.filter(item => item.status === 'rejected').length}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Overtime Summary */}
+                <div className="bg-gradient-to-br from-white to-slate-50/50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                                <Clock size={18} />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-slate-800 text-sm">Lembur Karyawan</h4>
+                                <p className="text-xs text-slate-500">Ringkasan pengajuan lembur</p>
+                            </div>
+                        </div>
+                        <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full">
+                            {overtimeRequests.length} Total
+                        </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-amber-50/60 hover:bg-amber-50 p-3 rounded-xl border border-amber-100 transition-colors">
+                            <p className="text-[11px] text-amber-600 font-medium">Menunggu</p>
+                            <div className="flex items-baseline gap-1 mt-1">
+                                <span className="text-xl font-bold text-amber-700">
+                                    {overtimeRequests.filter(item => item.status === 'pending').length}
+                                </span>
+                                <span className="text-[9px] text-amber-500 font-bold uppercase tracking-wider">Masuk</span>
+                            </div>
+                        </div>
+                        <div className="bg-emerald-50/60 hover:bg-emerald-50 p-3 rounded-xl border border-emerald-100 transition-colors">
+                            <p className="text-[11px] text-emerald-600 font-medium">Disetujui</p>
+                            <div className="flex items-baseline mt-1">
+                                <span className="text-xl font-bold text-emerald-700">
+                                    {overtimeRequests.filter(item => item.status === 'approved').length}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="bg-rose-50/60 hover:bg-rose-50 p-3 rounded-xl border border-rose-100 transition-colors">
+                            <p className="text-[11px] text-rose-600 font-medium">Ditolak</p>
+                            <div className="flex items-baseline mt-1">
+                                <span className="text-xl font-bold text-rose-700">
+                                    {overtimeRequests.filter(item => item.status === 'rejected').length}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

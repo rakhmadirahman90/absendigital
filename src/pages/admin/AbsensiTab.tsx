@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { MapPin, Image as ImageIcon, Edit2, Trash2, X } from 'lucide-react';
+import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -14,6 +14,10 @@ export default function AbsensiTab() {
     const [filterDivisi, setFilterDivisi] = useState('');
     const [usersMap, setUsersMap] = useState<Record<string, any>>({});
     const [divisiList, setDivisiList] = useState<string[]>([]);
+    
+    // Additional filters for interactive UX
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'Hadir' | 'Terlambat' | 'absen'>('all');
     
     const [editingRecord, setEditingRecord] = useState<any>(null);
     const [editForm, setEditForm] = useState({ jam_masuk: '', jam_pulang: '', status: '' });
@@ -69,10 +73,10 @@ export default function AbsensiTab() {
         if (!deleteId) return;
         try {
             await deleteDoc(doc(db, 'attendance', deleteId));
-            toast.success('Data berhasil dihapus');
+            toast.success('Data absensi berhasil dihapus');
         } catch (error) {
             console.error('Error deleting attendance:', error);
-            toast.error('Gagal menghapus data');
+            toast.error('Gagal menghapus data absensi');
         } finally {
             setDeleteId(null);
         }
@@ -95,75 +99,338 @@ export default function AbsensiTab() {
                 jam_pulang: editForm.jam_pulang,
                 status: editForm.status
             });
-            toast.success('Data berhasil diupdate');
+            toast.success('Data absensi berhasil diperbarui');
             setEditingRecord(null);
         } catch (error) {
             console.error('Error updating attendance:', error);
-            toast.error('Gagal mengupdate data');
+            toast.error('Gagal memperbarui data absensi');
         }
     };
 
+    // Derived statistics over unfiltered attendance
+    const totalCount = attendance.length;
+    const hadirCount = attendance.filter(item => item.status === 'Hadir').length;
+    const terlambatCount = attendance.filter(item => item.status === 'Terlambat').length;
+    const absenCount = attendance.filter(item => ['Izin', 'Sakit', 'Alpa'].includes(item.status)).length;
+
+    // Filter displayed list
+    const displayedAttendance = attendance.filter(item => {
+        const user = usersMap[item.user_id] || {};
+        const employeeName = (user.nama || '').toLowerCase();
+        const matchesSearch = employeeName.includes(searchQuery.toLowerCase());
+        
+        if (!matchesSearch) return false;
+        
+        if (statusFilter === 'all') return true;
+        if (statusFilter === 'Hadir') return item.status === 'Hadir';
+        if (statusFilter === 'Terlambat') return item.status === 'Terlambat';
+        if (statusFilter === 'absen') return ['Izin', 'Sakit', 'Alpa'].includes(item.status);
+        
+        return true;
+    });
+
     return (
         <div className="space-y-6">
-            <h3 className="text-xl font-bold text-slate-800">Monitor Absensi</h3>
-            
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
-                <div className="flex-1">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Tanggal</label>
-                    <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                </div>
-                <div className="flex-1">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Divisi</label>
-                    <select value={filterDivisi} onChange={e => setFilterDivisi(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                        <option value="">Semua Divisi</option>
-                        {divisiList.map(div => <option key={div} value={div}>{div}</option>)}
-                    </select>
-                </div>
+            <div>
+                <h3 className="text-xl font-bold text-slate-800">Monitor Absensi</h3>
+                <p className="text-xs text-slate-500 mt-1">Kelola dan pantau ketepatan waktu, foto selfie, serta lokasi absen harian karyawan.</p>
             </div>
 
+            {/* Interactive Statistics Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Card Total */}
+                <button
+                    onClick={() => setStatusFilter('all')}
+                    className={`text-left p-4 rounded-2xl border transition-all duration-200 ${
+                        statusFilter === 'all'
+                            ? 'bg-blue-50/60 border-blue-200 ring-2 ring-blue-500/20 shadow-sm'
+                            : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                    }`}
+                >
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Absen</span>
+                        <div className="p-1.5 bg-slate-100 text-slate-600 rounded-lg">
+                            <Users size={16} />
+                        </div>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl font-bold text-slate-800">{totalCount}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Orang</span>
+                    </div>
+                    <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                        <span>Klik untuk melihat semua</span>
+                    </div>
+                </button>
+
+                {/* Card Hadir */}
+                <button
+                    onClick={() => setStatusFilter(statusFilter === 'Hadir' ? 'all' : 'Hadir')}
+                    className={`text-left p-4 rounded-2xl border transition-all duration-200 ${
+                        statusFilter === 'Hadir'
+                            ? 'bg-emerald-50/60 border-emerald-200 ring-2 ring-emerald-500/20 shadow-sm'
+                            : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                    }`}
+                >
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">Tepat Waktu</span>
+                        <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                            <CheckCircle2 size={16} />
+                        </div>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl font-bold text-emerald-700">{hadirCount}</span>
+                        <span className="text-[10px] text-emerald-500 font-medium">Hadir</span>
+                    </div>
+                    <div className="mt-2 text-[10px] text-emerald-500 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span>{statusFilter === 'Hadir' ? 'Filter Aktif' : 'Klik untuk memfilter'}</span>
+                    </div>
+                </button>
+
+                {/* Card Terlambat */}
+                <button
+                    onClick={() => setStatusFilter(statusFilter === 'Terlambat' ? 'all' : 'Terlambat')}
+                    className={`text-left p-4 rounded-2xl border transition-all duration-200 ${
+                        statusFilter === 'Terlambat'
+                            ? 'bg-rose-50/60 border-rose-200 ring-2 ring-rose-500/20 shadow-sm'
+                            : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                    }`}
+                >
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-rose-600 uppercase tracking-wider">Terlambat</span>
+                        <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
+                            <Clock size={16} />
+                        </div>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl font-bold text-rose-700">{terlambatCount}</span>
+                        <span className="text-[10px] text-rose-500 font-medium">Orang</span>
+                    </div>
+                    <div className="mt-2 text-[10px] text-rose-500 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                        <span>{statusFilter === 'Terlambat' ? 'Filter Aktif' : 'Klik untuk memfilter'}</span>
+                    </div>
+                </button>
+
+                {/* Card Izin/Sakit/Alpa */}
+                <button
+                    onClick={() => setStatusFilter(statusFilter === 'absen' ? 'all' : 'absen')}
+                    className={`text-left p-4 rounded-2xl border transition-all duration-200 ${
+                        statusFilter === 'absen'
+                            ? 'bg-amber-50/60 border-amber-200 ring-2 ring-amber-500/20 shadow-sm'
+                            : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                    }`}
+                >
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Izin / Sakit / Alpa</span>
+                        <div className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
+                            <AlertTriangle size={16} />
+                        </div>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl font-bold text-amber-700">{absenCount}</span>
+                        <span className="text-[10px] text-amber-500 font-medium">Ketidakhadiran</span>
+                    </div>
+                    <div className="mt-2 text-[10px] text-amber-500 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span>{statusFilter === 'absen' ? 'Filter Aktif' : 'Klik untuk memfilter'}</span>
+                    </div>
+                </button>
+            </div>
+            
+            {/* Filter and Search Bar */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Search Field */}
+                    <div className="relative">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cari Karyawan</label>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="Masukkan nama karyawan..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
+                            />
+                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200"
+                                >
+                                    <X size={12} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Date Selector */}
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Absensi</label>
+                        <input 
+                            type="date" 
+                            value={filterDate} 
+                            onChange={e => setFilterDate(e.target.value)} 
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700" 
+                        />
+                    </div>
+
+                    {/* Division Selector */}
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Divisi</label>
+                        <select 
+                            value={filterDivisi} 
+                            onChange={e => setFilterDivisi(e.target.value)} 
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700 bg-white"
+                        >
+                            <option value="">Semua Divisi</option>
+                            {divisiList.map(div => <option key={div} value={div}>{div}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                {/* Filter badges indicator */}
+                {(statusFilter !== 'all' || searchQuery || filterDivisi) && (
+                    <div className="pt-2 flex flex-wrap items-center gap-2 border-t border-slate-100">
+                        <span className="text-xs text-slate-400 mr-1 flex items-center gap-1">
+                            <Filter size={12} />
+                            Filter Aktif:
+                        </span>
+                        
+                        {searchQuery && (
+                            <span className="bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 border border-slate-200">
+                                Nama: &quot;{searchQuery}&quot;
+                                <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600"><X size={12} /></button>
+                            </span>
+                        )}
+
+                        {statusFilter !== 'all' && (
+                            <span className="bg-blue-50 text-blue-700 text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 border border-blue-200 font-medium">
+                                Status: {statusFilter === 'absen' ? 'Izin / Sakit / Alpa' : statusFilter}
+                                <button onClick={() => setStatusFilter('all')} className="text-blue-400 hover:text-blue-600"><X size={12} /></button>
+                            </span>
+                        )}
+
+                        {filterDivisi && (
+                            <span className="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 border border-indigo-200 font-medium">
+                                Divisi: {filterDivisi}
+                                <button onClick={() => setFilterDivisi('')} className="text-indigo-400 hover:text-indigo-600"><X size={12} /></button>
+                            </span>
+                        )}
+
+                        <button 
+                            onClick={() => { setSearchQuery(''); setStatusFilter('all'); setFilterDivisi(''); }}
+                            className="text-xs text-blue-600 hover:text-blue-800 hover:underline ml-auto font-medium"
+                        >
+                            Reset Semua Filter
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Attendance Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
-                                <th className="p-4 text-sm font-medium text-slate-500 min-w-[120px]">Karyawan</th>
-                                <th className="p-4 text-sm font-medium text-slate-500 min-w-[100px]">Divisi</th>
-                                <th className="p-4 text-sm font-medium text-slate-500">Masuk</th>
-                                <th className="p-4 text-sm font-medium text-slate-500">Pulang</th>
-                                <th className="p-4 text-sm font-medium text-slate-500 text-center">Lokasi</th>
-                                <th className="p-4 text-sm font-medium text-slate-500 text-center">Selfie</th>
-                                <th className="p-4 text-sm font-medium text-slate-500">Status</th>
-                                <th className="p-4 text-sm font-medium text-slate-500 text-right">Aksi</th>
+                                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[130px]">Karyawan</th>
+                                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[110px]">Divisi</th>
+                                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Jam Masuk</th>
+                                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Jam Pulang</th>
+                                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Lokasi Presensi</th>
+                                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Foto Selfie</th>
+                                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Aksi</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-slate-100">
                             {loading ? (
-                                <tr><td colSpan={8} className="p-4 text-center text-slate-500">Loading...</td></tr>
-                            ) : attendance.length === 0 ? (
-                                <tr><td colSpan={8} className="p-4 text-center text-slate-500">Tidak ada data absensi pada tanggal ini.</td></tr>
+                                <tr>
+                                    <td colSpan={8} className="p-8 text-center text-slate-400">
+                                        <div className="flex flex-col items-center justify-center space-y-2">
+                                            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                                            <span className="text-sm font-medium">Memuat data absensi...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : displayedAttendance.length === 0 ? (
+                                <tr>
+                                    <td colSpan={8} className="p-12 text-center text-slate-500">
+                                        <div className="max-w-md mx-auto space-y-2">
+                                            <p className="font-bold text-slate-700">Tidak ada data absensi</p>
+                                            <p className="text-xs text-slate-400">
+                                                {attendance.length === 0 
+                                                    ? 'Belum ada data presensi yang masuk pada tanggal terpilih.' 
+                                                    : 'Tidak ada data presensi yang cocok dengan filter aktif Anda.'}
+                                            </p>
+                                        </div>
+                                    </td>
+                                </tr>
                             ) : (
-                                attendance.map(item => {
+                                displayedAttendance.map(item => {
                                     const user = usersMap[item.user_id] || {};
+                                    
+                                    // Beautiful status colors
+                                    const getStatusStyles = (status: string) => {
+                                        switch (status) {
+                                            case 'Hadir':
+                                                return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                                            case 'Terlambat':
+                                                return 'bg-rose-50 text-rose-700 border-rose-100';
+                                            case 'Izin':
+                                                return 'bg-amber-50 text-amber-700 border-amber-100';
+                                            case 'Sakit':
+                                                return 'bg-sky-50 text-sky-700 border-sky-100';
+                                            case 'Alpa':
+                                                return 'bg-slate-100 text-slate-700 border-slate-200';
+                                            default:
+                                                return 'bg-slate-50 text-slate-600 border-slate-100';
+                                        }
+                                    };
+
                                     return (
-                                        <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                                            <td className="p-4 text-sm font-medium text-slate-800">{user.nama || 'Unknown'}</td>
-                                            <td className="p-4 text-sm text-slate-600">{user.divisi || '-'}</td>
-                                            <td className="p-4 text-sm font-mono text-slate-600">{item.jam_masuk || '-'}</td>
-                                            <td className="p-4 text-sm font-mono text-slate-600">{item.jam_pulang || '-'}</td>
-                                            <td className="p-4 text-sm text-center">
-                                                <div className="flex flex-col items-center justify-center space-y-1">
-                                                    {item.latitude_masuk && (
+                                        <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="p-4">
+                                                <div className="font-semibold text-slate-800 text-sm">{user.nama || 'Tidak Dikenal'}</div>
+                                                <div className="text-[10px] text-slate-400 mt-0.5">UID: {item.user_id?.substring(0, 8)}...</div>
+                                            </td>
+                                            <td className="p-4 text-sm">
+                                                <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium">
+                                                    {user.divisi || '-'}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-sm font-mono font-medium text-slate-600">
+                                                {item.jam_masuk ? (
+                                                    <span className="text-slate-700">{item.jam_masuk}</span>
+                                                ) : (
+                                                    <span className="text-slate-300">-</span>
+                                                )}
+                                            </td>
+                                            <td className="p-4 text-sm font-mono font-medium text-slate-600">
+                                                {item.jam_pulang ? (
+                                                    <span className="text-slate-700">{item.jam_pulang}</span>
+                                                ) : (
+                                                    <span className="text-slate-300">-</span>
+                                                )}
+                                            </td>
+                                            <td className="p-4 text-center">
+                                                <div className="flex flex-col items-center justify-center gap-1">
+                                                    {item.latitude_masuk ? (
                                                         <button 
                                                             onClick={() => handleOpenMap(item.latitude_masuk, item.longitude_masuk)} 
-                                                            className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
-                                                            title={item.alamat_masuk || "Lokasi Masuk"}
+                                                            className="w-9 h-9 flex items-center justify-center text-blue-600 hover:bg-blue-50 hover:text-blue-700 rounded-xl border border-slate-100 shadow-sm transition-all" 
+                                                            title={item.alamat_masuk || "Buka Lokasi di Google Maps"}
                                                         >
-                                                            <MapPin size={18} />
+                                                            <MapPin size={16} />
                                                         </button>
+                                                    ) : (
+                                                        <span className="text-slate-300 text-xs">-</span>
                                                     )}
                                                     {item.alamat_masuk && (
                                                         <span 
-                                                            className="text-[10px] text-slate-500 max-w-[120px] truncate block" 
+                                                            className="text-[9px] text-slate-400 max-w-[120px] truncate block hover:text-slate-600" 
                                                             title={item.alamat_masuk}
                                                         >
                                                             {item.alamat_masuk}
@@ -171,38 +438,52 @@ export default function AbsensiTab() {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="p-4 text-sm text-center">
-                                                <div className="flex justify-center gap-1">
-                                                    {item.selfie_masuk && (
+                                            <td className="p-4 text-center">
+                                                <div className="flex justify-center gap-1.5">
+                                                    {item.selfie_masuk ? (
                                                         <button 
                                                             onClick={() => setViewPhoto(item.selfie_masuk)} 
-                                                            className="w-10 h-10 inline-flex items-center justify-center text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" 
-                                                            title="Lihat Selfie Masuk"
+                                                            className="w-9 h-9 inline-flex items-center justify-center text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-100 shadow-sm transition-all" 
+                                                            title="Selfie Masuk"
                                                         >
-                                                            <ImageIcon size={18} />
+                                                            <ImageIcon size={15} />
                                                         </button>
-                                                    )}
-                                                    {item.selfie_pulang && (
+                                                    ) : null}
+                                                    {item.selfie_pulang ? (
                                                         <button 
                                                             onClick={() => setViewPhoto(item.selfie_pulang)} 
-                                                            className="w-10 h-10 inline-flex items-center justify-center text-teal-600 hover:bg-teal-50 rounded-lg transition-colors" 
-                                                            title="Lihat Selfie Pulang"
+                                                            className="w-9 h-9 inline-flex items-center justify-center text-teal-600 hover:bg-teal-50 rounded-xl border border-slate-100 shadow-sm transition-all" 
+                                                            title="Selfie Pulang"
                                                         >
-                                                            <ImageIcon size={18} />
+                                                            <ImageIcon size={15} />
                                                         </button>
+                                                    ) : null}
+                                                    {!item.selfie_masuk && !item.selfie_pulang && (
+                                                        <span className="text-slate-300 text-xs">-</span>
                                                     )}
-                                                    {!item.selfie_masuk && !item.selfie_pulang && <span className="text-slate-400">-</span>}
                                                 </div>
                                             </td>
                                             <td className="p-4 text-sm">
-                                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${item.status === 'Terlambat' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${getStatusStyles(item.status || 'Hadir')}`}>
                                                     {item.status || 'Hadir'}
                                                 </span>
                                             </td>
-                                            <td className="p-4 text-sm">
-                                                <div className="flex justify-end gap-2">
-                                                    <button onClick={() => handleEdit(item)} className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={18} /></button>
-                                                    <button onClick={() => setDeleteId(item.id)} className="w-10 h-10 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                                            <td className="p-4">
+                                                <div className="flex justify-end gap-1.5">
+                                                    <button 
+                                                        onClick={() => handleEdit(item)} 
+                                                        className="w-9 h-9 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg border border-slate-100 shadow-sm transition-colors"
+                                                        title="Edit Absensi"
+                                                    >
+                                                        <Edit2 size={14} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setDeleteId(item.id)} 
+                                                        className="w-9 h-9 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg border border-slate-100 shadow-sm transition-colors"
+                                                        title="Hapus Absensi"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -214,42 +495,49 @@ export default function AbsensiTab() {
                 </div>
             </div>
 
+            {/* Edit Dialog Modal */}
             {editingRecord && (
-                <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                            <h3 className="font-bold text-slate-800">Edit Absensi</h3>
-                            <button onClick={() => setEditingRecord(null)} className="text-slate-400 hover:text-slate-600">
-                                <X size={20} />
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <div>
+                                <h3 className="font-bold text-slate-800">Edit Absensi</h3>
+                                <p className="text-xs text-slate-400 mt-0.5">Milik: {usersMap[editingRecord.user_id]?.nama || 'Karyawan'}</p>
+                            </div>
+                            <button 
+                                onClick={() => setEditingRecord(null)} 
+                                className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200/50 rounded-lg transition-all"
+                            >
+                                <X size={18} />
                             </button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Jam Masuk</label>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Jam Masuk</label>
                                 <input 
                                     type="time" 
                                     step="1"
                                     value={editForm.jam_masuk}
                                     onChange={(e) => setEditForm({...editForm, jam_masuk: e.target.value})}
-                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Jam Pulang</label>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Jam Pulang</label>
                                 <input 
                                     type="time" 
                                     step="1"
                                     value={editForm.jam_pulang}
                                     onChange={(e) => setEditForm({...editForm, jam_pulang: e.target.value})}
-                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Status Presensi</label>
                                 <select 
                                     value={editForm.status}
                                     onChange={(e) => setEditForm({...editForm, status: e.target.value})}
-                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700 bg-white"
                                 >
                                     <option value="Hadir">Hadir</option>
                                     <option value="Terlambat">Terlambat</option>
@@ -259,31 +547,44 @@ export default function AbsensiTab() {
                                 </select>
                             </div>
                         </div>
-                        <div className="p-4 border-t border-slate-100 flex justify-end space-x-3 bg-slate-50">
-                            <button onClick={() => setEditingRecord(null)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-200 rounded-lg transition-colors border border-slate-300">Batal</button>
-                            <button onClick={handleSaveEdit} className="px-4 py-2 bg-blue-600 text-white font-medium hover:bg-blue-700 rounded-lg transition-colors">Simpan Perubahan</button>
+                        <div className="p-4 border-t border-slate-100 flex justify-end gap-2.5 bg-slate-50">
+                            <button 
+                                onClick={() => setEditingRecord(null)} 
+                                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+                            >
+                                Batal
+                            </button>
+                            <button 
+                                onClick={handleSaveEdit} 
+                                className="px-4 py-2 bg-blue-600 text-white font-semibold hover:bg-blue-700 rounded-lg transition-all text-sm shadow-sm"
+                            >
+                                Simpan Perubahan
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
             
+            {/* Confirmation Dialog */}
             <ConfirmDialog
                 isOpen={!!deleteId}
                 title="Hapus Data Absensi"
-                message="Apakah Anda yakin ingin menghapus data absensi ini? Tindakan ini tidak dapat dibatalkan."
+                message={`Apakah Anda yakin ingin menghapus data absensi milik ${usersMap[attendance.find(item => item.id === deleteId)?.user_id]?.nama || 'Karyawan'}? Tindakan ini tidak dapat dibatalkan.`}
                 onConfirm={confirmDelete}
                 onCancel={() => setDeleteId(null)}
                 isDestructive={true}
-                confirmText="Hapus Data"
+                confirmText="Hapus Permanen"
+                cancelText="Batal"
             />
 
+            {/* Photo Viewer Modal */}
             {viewPhoto && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
                     <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                             <h3 className="font-bold text-slate-800">Foto Selfie Absensi</h3>
-                            <button onClick={() => setViewPhoto(null)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-lg transition-colors">
-                                <X size={20} />
+                            <button onClick={() => setViewPhoto(null)} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200/50 rounded-lg transition-all">
+                                <X size={18} />
                             </button>
                         </div>
                         <div className="p-4 flex flex-col items-center bg-slate-100 justify-center">
@@ -291,7 +592,7 @@ export default function AbsensiTab() {
                                 <img 
                                     src={viewPhoto} 
                                     alt="Selfie Absensi" 
-                                    className="max-w-full max-h-[65vh] object-contain rounded-lg"
+                                    className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-sm"
                                     referrerPolicy="no-referrer"
                                 />
                             </div>
