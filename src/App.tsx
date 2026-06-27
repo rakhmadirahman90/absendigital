@@ -12,7 +12,11 @@ import Dashboard from './pages/Dashboard';
 import CheckInOut from './pages/CheckInOut';
 import History from './pages/History';
 import Submissions from './pages/Submissions';
-import AdminDashboard from './pages/AdminDashboard';
+import AdminDashboardTab from './pages/admin/DashboardTab';
+import KaryawanTab from './pages/admin/KaryawanTab';
+import AbsensiTab from './pages/admin/AbsensiTab';
+import ApprovalTab from './pages/admin/ApprovalTab';
+import PengaturanTab from './pages/admin/PengaturanTab';
 import Layout from './components/Layout';
 
 const ProtectedRoute = ({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) => {
@@ -29,6 +33,14 @@ const ProtectedRoute = ({ children, adminOnly = false }: { children: React.React
   return <>{children}</>;
 };
 
+const DashboardWrapper = () => {
+  const { dbUser } = useAuth();
+  if (dbUser?.role === 'admin') {
+    return <AdminDashboardTab />;
+  }
+  return <Dashboard />;
+};
+
 export default function App() {
   return (
     <AuthProvider>
@@ -37,11 +49,14 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<DashboardWrapper />} />
             <Route path="/checkinout" element={<CheckInOut />} />
             <Route path="/history" element={<History />} />
             <Route path="/submissions" element={<Submissions />} />
-            <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+            <Route path="/admin/karyawan" element={<ProtectedRoute adminOnly><KaryawanTab /></ProtectedRoute>} />
+            <Route path="/admin/absensi" element={<ProtectedRoute adminOnly><AbsensiTab /></ProtectedRoute>} />
+            <Route path="/admin/approval" element={<ProtectedRoute adminOnly><ApprovalTab /></ProtectedRoute>} />
+            <Route path="/admin/settings" element={<ProtectedRoute adminOnly><PengaturanTab /></ProtectedRoute>} />
           </Route>
         </Routes>
       </Router>

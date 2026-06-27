@@ -6,6 +6,7 @@ import { MapPin, Camera, CheckCircle2, AlertCircle, RefreshCw, Navigation, Compa
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import RealTimeClock from '../components/RealTimeClock';
+import { createNotification } from '../lib/notifications';
 
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371e3; // Radius of the earth in m
@@ -448,6 +449,14 @@ export default function CheckInOut() {
           status: status,
           created_at: serverTimestamp()
         });
+        
+        await createNotification(
+          user.uid,
+          'Absen Masuk Berhasil',
+          `Absensi masuk Anda pada tanggal ${dateStr} pukul ${timeStr} berhasil dicatat (${status}).`,
+          'attendance'
+        );
+
         const msg = `Absen masuk berhasil (${status})`;
         setMessage(msg);
         toast.success(msg);
@@ -469,6 +478,14 @@ export default function CheckInOut() {
           selfie_pulang: watermarkedImageSrc,
           updated_at: serverTimestamp()
         });
+
+        await createNotification(
+          user.uid,
+          'Absen Pulang Berhasil',
+          `Absensi pulang Anda pada tanggal ${dateStr} pukul ${timeStr} berhasil dicatat.`,
+          'attendance'
+        );
+
         const msg = 'Absen pulang berhasil';
         setMessage(msg);
         toast.success(msg);

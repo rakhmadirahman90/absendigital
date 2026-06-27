@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc } from 'firebase/firestore';
 import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown, Edit, Trash2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
+import { createNotification } from '../../lib/notifications';
 
 export default function ApprovalTab() {
     const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
@@ -89,10 +90,36 @@ export default function ApprovalTab() {
         if (!actionData) return;
         const { collectionName, id, status } = actionData;
         try {
-            await updateDoc(doc(db, collectionName, id), { 
+            const docRef = doc(db, collectionName, id);
+            const docSnap = await getDoc(docRef);
+            
+            await updateDoc(docRef, { 
                 status,
                 catatan_admin: adminRemark.trim()
             });
+
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const targetUserId = data.user_id;
+                let reqType = '';
+                if (collectionName === 'leave_requests') {
+                    reqType = `pengajuan ${data.tipe || 'izin/sakit/cuti'}`;
+                } else {
+                    reqType = 'pengajuan lembur';
+                }
+
+                if (targetUserId) {
+                    const title = status === 'approved' ? 'Pengajuan Disetujui' : (status === 'rejected' ? 'Pengajuan Ditolak' : 'Pengajuan Diubah');
+                    const message = status === 'approved' 
+                        ? `Selamat, ${reqType} Anda telah disetujui oleh Admin.${adminRemark.trim() ? ` Catatan: ${adminRemark.trim()}` : ''}` 
+                        : (status === 'rejected' 
+                            ? `Maaf, ${reqType} Anda ditolak oleh Admin.${adminRemark.trim() ? ` Catatan: ${adminRemark.trim()}` : ''}`
+                            : `${reqType} Anda dikembalikan statusnya ke pending.`);
+                    const type = status === 'rejected' ? 'submission_rejected' : 'submission_approved';
+                    await createNotification(targetUserId, title, message, type);
+                }
+            }
+
             toast.success(`Berhasil mengubah status menjadi ${status}`);
         } catch (error) {
             console.error(error);
@@ -130,11 +157,20 @@ export default function ApprovalTab() {
         if (!editItem) return;
         const { item, collectionName } = editItem;
         try {
+            const originalStatus = item.status || 'pending';
+            let statusChanged = false;
+            let newStatus = '';
+            let remark = '';
+
             if (collectionName === 'leave_requests') {
                 if (editLeaveForm.tanggal_mulai > editLeaveForm.tanggal_akhir) {
                     toast.error('Tanggal mulai tidak boleh melebihi tanggal akhir.');
                     return;
                 }
+                newStatus = editLeaveForm.status;
+                remark = editLeaveForm.catatan_admin.trim();
+                statusChanged = originalStatus !== newStatus;
+
                 await updateDoc(doc(db, 'leave_requests', item.id), {
                     tipe: editLeaveForm.tipe,
                     tanggal_mulai: editLeaveForm.tanggal_mulai,
@@ -148,6 +184,10 @@ export default function ApprovalTab() {
                     toast.error('Durasi jam lembur harus lebih besar dari 0.');
                     return;
                 }
+                newStatus = editOvertimeForm.status;
+                remark = editOvertimeForm.catatan_admin.trim();
+                statusChanged = originalStatus !== newStatus;
+
                 await updateDoc(doc(db, 'overtime', item.id), {
                     tanggal: editOvertimeForm.tanggal,
                     durasi_jam: Number(editOvertimeForm.durasi_jam),
@@ -156,6 +196,24 @@ export default function ApprovalTab() {
                     catatan_admin: editOvertimeForm.catatan_admin.trim()
                 });
             }
+
+            if (statusChanged && item.user_id) {
+                let reqType = '';
+                if (collectionName === 'leave_requests') {
+                    reqType = `pengajuan ${editLeaveForm.tipe || 'izin/sakit/cuti'}`;
+                } else {
+                    reqType = 'pengajuan lembur';
+                }
+                const title = newStatus === 'approved' ? 'Pengajuan Disetujui' : (newStatus === 'rejected' ? 'Pengajuan Ditolak' : 'Pengajuan Diubah');
+                const message = newStatus === 'approved' 
+                    ? `Selamat, ${reqType} Anda telah disetujui oleh Admin.${remark ? ` Catatan: ${remark}` : ''}` 
+                    : (newStatus === 'rejected' 
+                        ? `Maaf, ${reqType} Anda ditolak oleh Admin.${remark ? ` Catatan: ${remark}` : ''}`
+                        : `${reqType} Anda diubah statusnya menjadi ${newStatus}.`);
+                const type = newStatus === 'rejected' ? 'submission_rejected' : 'submission_approved';
+                await createNotification(item.user_id, title, message, type);
+            }
+
             toast.success('Pengajuan berhasil diperbarui');
             setEditItem(null);
         } catch (error) {

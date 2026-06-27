@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 type AuthContextType = {
@@ -19,53 +19,52 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [currentUserId, setCurrentUserId] = useState<string | null>(() => localStorage.getItem('auth_user_id'));
   const [user, setUser] = useState<any | null>(null);
   const [dbUser, setDbUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUser = async () => {
-      const storedUserId = localStorage.getItem('auth_user_id');
-      if (storedUserId) {
-        try {
-          const docRef = doc(db, "users", storedUserId);
-          const docSnap = await getDoc(docRef);
-          
-          if (docSnap.exists()) {
-             const data = docSnap.data();
-             const userData = { uid: storedUserId, ...data };
-             setUser(userData);
-             setDbUser(data);
-          } else {
-             localStorage.removeItem('auth_user_id');
-             setUser(null);
-             setDbUser(null);
-          }
-        } catch (error) {
-           console.error("Error fetching db user", error);
-           setUser(null);
-           setDbUser(null);
-        }
+    if (!currentUserId) {
+      setUser(null);
+      setDbUser(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const docRef = doc(db, "users", currentUserId);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const userData = { uid: currentUserId, ...data };
+        setUser(userData);
+        setDbUser(data);
       } else {
+        localStorage.removeItem('auth_user_id');
+        setCurrentUserId(null);
         setUser(null);
         setDbUser(null);
       }
       setLoading(false);
-    };
+    }, (error) => {
+      console.error("Error listening to user document", error);
+      setUser(null);
+      setDbUser(null);
+      setLoading(false);
+    });
 
-    fetchUser();
-  }, []);
+    return () => unsubscribe();
+  }, [currentUserId]);
 
   const login = (userData: any) => {
     localStorage.setItem('auth_user_id', userData.uid);
-    setUser(userData);
-    setDbUser(userData);
+    setCurrentUserId(userData.uid);
   };
 
   const logout = () => {
     localStorage.removeItem('auth_user_id');
-    setUser(null);
-    setDbUser(null);
+    setCurrentUserId(null);
   };
 
   return (
