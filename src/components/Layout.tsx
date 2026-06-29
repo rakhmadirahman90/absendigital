@@ -23,7 +23,6 @@ export default function Layout() {
     navItems.push({ name: 'Absensi', path: '/admin/absensi', icon: CheckSquare });
     navItems.push({ name: 'Approval', path: '/admin/approval', icon: FileCheck });
     navItems.push({ name: 'Pengaturan', path: '/admin/settings', icon: Settings });
-    navItems.push({ name: 'Absen Mandiri', path: '/checkinout', icon: MapPin });
   } else {
     navItems.push({ name: 'Absen', path: '/checkinout', icon: MapPin });
     navItems.push({ name: 'Pengajuan', path: '/submissions', icon: ClipboardList });
