@@ -39,7 +39,7 @@ export default function PengaturanTab() {
           } else if (data.latitude && data.longitude) {
             // Migrasi dari data lama
             officesList = [{
-              id: 'default_office',
+              id: 'default',
               name: data.name || 'Kantor Pusat',
               latitude: Number(data.latitude),
               longitude: Number(data.longitude),

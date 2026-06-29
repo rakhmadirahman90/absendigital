@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
-import { Plus, Edit2, Trash2, Building } from 'lucide-react';
+import { Plus, Edit2, Trash2, Building, UserPlus } from 'lucide-react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
 
@@ -13,6 +13,27 @@ export default function KaryawanTab() {
     const [formData, setFormData] = useState<any>({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all' });
     const [editingId, setEditingId] = useState<string | null>(null);
     const [deleteId, setDeleteId] = useState<string | null>(null);
+
+    const importEmployeeDataFromImage = async () => {
+        const employeesToImport = [
+            { waNumber: '0816200001', nama: 'ASMA', divisi: '162', jabatan: 'ADMIN', role: 'karyawan', password: '123456', assignedOfficeId: 'all' },
+            { waNumber: '0816200002', nama: 'JUNET', divisi: '162', jabatan: 'OPERATOR', role: 'karyawan', password: '123456', assignedOfficeId: 'all' },
+            { waNumber: '0816200003', nama: 'ABI', divisi: '162', jabatan: 'OPERATOR', role: 'karyawan', password: '123456', assignedOfficeId: 'all' },
+            { waNumber: '0816200004', nama: 'JUMA', divisi: '162', jabatan: 'PENGAWAS GUD', role: 'karyawan', password: '123456', assignedOfficeId: 'all' },
+            { waNumber: '0816200005', nama: 'PUNDU', divisi: '162', jabatan: 'OPERATOR', role: 'karyawan', password: '123456', assignedOfficeId: 'all' }
+        ];
+
+        try {
+            for (const emp of employeesToImport) {
+                const userId = `wa-${emp.waNumber}`;
+                await setDoc(doc(db, 'users', userId), emp, { merge: true });
+            }
+            toast.success('Berhasil mengimpor 5 data karyawan dari gambar');
+        } catch (error) {
+            console.error("Gagal mengimpor data karyawan:", error);
+            toast.error('Gagal mengimpor data karyawan');
+        }
+    };
 
     useEffect(() => {
         const fetchOffices = async () => {
@@ -26,7 +47,7 @@ export default function KaryawanTab() {
                         officesList = data.offices;
                     } else if (data.latitude && data.longitude) {
                         officesList = [{
-                            id: 'default_office',
+                            id: 'default',
                             name: data.name || 'Kantor Pusat',
                             latitude: Number(data.latitude),
                             longitude: Number(data.longitude),
@@ -89,6 +110,10 @@ export default function KaryawanTab() {
     };
 
     const handleEdit = (user: any) => {
+        let officeId = user.assignedOfficeId || 'all';
+        if (officeId === 'default_office') {
+            officeId = 'default';
+        }
         setFormData({
             waNumber: user.waNumber || '',
             nama: user.nama || '',
@@ -96,7 +121,7 @@ export default function KaryawanTab() {
             divisi: user.divisi || '',
             jabatan: user.jabatan || '',
             password: user.password || '',
-            assignedOfficeId: user.assignedOfficeId || 'all'
+            assignedOfficeId: officeId
         });
         setEditingId(user.id);
         setShowForm(true);
@@ -104,15 +129,27 @@ export default function KaryawanTab() {
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold text-slate-800">Manajemen Karyawan</h3>
-                <button 
-                    onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all' }); }}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                >
-                    <Plus size={16} />
-                    <span>Tambah Karyawan</span>
-                </button>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h3 className="text-xl font-bold text-slate-800 font-sans">Manajemen Karyawan</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Kelola data profil, jabatan, divisi, dan hak akses karyawan.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <button 
+                        onClick={importEmployeeDataFromImage}
+                        className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 active:scale-95 transition-all shadow-sm shadow-emerald-500/15 cursor-pointer"
+                    >
+                        <UserPlus size={15} />
+                        <span>Impor 5 Karyawan (ASMA, dll.)</span>
+                    </button>
+                    <button 
+                        onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all' }); }}
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 active:scale-95 transition-all shadow-sm shadow-blue-500/15 cursor-pointer"
+                    >
+                        <Plus size={16} />
+                        <span>Tambah Karyawan</span>
+                    </button>
+                </div>
             </div>
 
             {showForm && (
@@ -188,7 +225,7 @@ export default function KaryawanTab() {
                                 <tr><td colSpan={7} className="p-4 text-center text-slate-500">Tidak ada data karyawan.</td></tr>
                             ) : (
                                 users.map(user => {
-                                    const assignedOffice = offices.find(o => o.id === user.assignedOfficeId);
+                                    const assignedOffice = offices.find(o => o.id === user.assignedOfficeId || (o.id === 'default' && user.assignedOfficeId === 'default_office'));
                                     const officeLabel = user.assignedOfficeId === 'all' || !user.assignedOfficeId 
                                         ? 'Semua Lokasi' 
                                         : (assignedOffice ? assignedOffice.name : 'Lokasi Khusus (Dihapus)');
