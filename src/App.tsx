@@ -19,7 +19,15 @@ import ApprovalTab from './pages/admin/ApprovalTab';
 import PengaturanTab from './pages/admin/PengaturanTab';
 import Layout from './components/Layout';
 
-const ProtectedRoute = ({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) => {
+const ProtectedRoute = ({ 
+  children, 
+  adminOnly = false, 
+  userOnly = false 
+}: { 
+  children: React.ReactNode, 
+  adminOnly?: boolean, 
+  userOnly?: boolean 
+}) => {
   const { user, dbUser } = useAuth();
 
   if (!user) {
@@ -27,6 +35,10 @@ const ProtectedRoute = ({ children, adminOnly = false }: { children: React.React
   }
 
   if (adminOnly && dbUser?.role !== 'admin') {
+    return <Navigate to="/" replace />;
+  }
+
+  if (userOnly && dbUser?.role === 'admin') {
     return <Navigate to="/" replace />;
   }
 
@@ -50,9 +62,9 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/" element={<DashboardWrapper />} />
-            <Route path="/checkinout" element={<CheckInOut />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/submissions" element={<Submissions />} />
+            <Route path="/checkinout" element={<ProtectedRoute userOnly><CheckInOut /></ProtectedRoute>} />
+            <Route path="/history" element={<ProtectedRoute userOnly><History /></ProtectedRoute>} />
+            <Route path="/submissions" element={<ProtectedRoute userOnly><Submissions /></ProtectedRoute>} />
             <Route path="/admin/karyawan" element={<ProtectedRoute adminOnly><KaryawanTab /></ProtectedRoute>} />
             <Route path="/admin/absensi" element={<ProtectedRoute adminOnly><AbsensiTab /></ProtectedRoute>} />
             <Route path="/admin/approval" element={<ProtectedRoute adminOnly><ApprovalTab /></ProtectedRoute>} />
