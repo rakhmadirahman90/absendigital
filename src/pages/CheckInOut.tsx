@@ -124,6 +124,7 @@ export default function CheckInOut() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const webcamRef = useRef<Webcam>(null);
 
   interface OfficeLocation {
@@ -141,6 +142,35 @@ export default function CheckInOut() {
   const [distanceFromOffice, setDistanceFromOffice] = useState<number | null>(null);
   const [checkingLocation, setCheckingLocation] = useState(false);
   const [isWithinRadius, setIsWithinRadius] = useState<boolean | null>(null);
+
+  // GPS Simulation states for sandbox preview environments
+  const [isSimulatingGPS, setIsSimulatingGPS] = useState(false);
+  const [simulatedCoords, setSimulatedCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Helper to resolve coordinates either from simulation or real GPS API
+  const getCoordinates = (): Promise<{ latitude: number; longitude: number }> => {
+    if (isSimulatingGPS && simulatedCoords) {
+      return Promise.resolve(simulatedCoords);
+    }
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolokasi tidak didukung oleh browser Anda'));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          });
+        },
+        (err) => {
+          reject(err);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  };
 
   // Helper to find closest office and determine validation
   const evaluateLocations = (userLat: number, userLng: number, officesList: OfficeLocation[]) => {
@@ -174,6 +204,39 @@ export default function CheckInOut() {
     }
   };
 
+  const handleToggleSimulation = (enable: boolean) => {
+    setIsSimulatingGPS(enable);
+    if (enable && offices.length > 0) {
+      const firstOffice = offices[0];
+      const coords = { latitude: firstOffice.latitude, longitude: firstOffice.longitude };
+      setSimulatedCoords(coords);
+      setUserLocation(coords);
+      evaluateLocations(coords.latitude, coords.longitude, offices);
+      toast.success(`Mengaktifkan simulasi GPS di lokasi "${firstOffice.name}" (Dalam Radius)`);
+    } else {
+      setSimulatedCoords(null);
+      setCheckingLocation(true);
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude } = position.coords;
+            setUserLocation({ latitude, longitude });
+            evaluateLocations(latitude, longitude, offices);
+            setCheckingLocation(false);
+          },
+          (err) => {
+            console.error('Gagal mendapatkan lokasi real:', err);
+            setUserLocation(null);
+            setCheckingLocation(false);
+          },
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+      } else {
+        setCheckingLocation(false);
+      }
+    }
+  };
+
   // Load office configurations and user location on component mount
   useEffect(() => {
     const loadOfficeAndLocation = async () => {
@@ -200,7 +263,8 @@ export default function CheckInOut() {
 
           // Filter offices list if user is restricted to a specific office
           if (dbUser && dbUser.assignedOfficeId && dbUser.assignedOfficeId !== 'all') {
-            officesList = officesList.filter(o => o.id === dbUser.assignedOfficeId);
+            const mappedId = dbUser.assignedOfficeId === 'default_office' ? 'default' : dbUser.assignedOfficeId;
+            officesList = officesList.filter(o => o.id === mappedId);
           }
 
           setOffices(officesList);
@@ -234,31 +298,22 @@ export default function CheckInOut() {
     loadOfficeAndLocation();
   }, [dbUser]);
 
-  const refreshLocation = () => {
+  const refreshLocation = async () => {
     if (offices.length === 0) {
       toast.error('Pengaturan lokasi kantor tidak ditemukan');
       return;
     }
     setCheckingLocation(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          setUserLocation({ latitude, longitude });
-          evaluateLocations(latitude, longitude, offices);
-          setCheckingLocation(false);
-          toast.success('Lokasi berhasil diperbarui');
-        },
-        (err) => {
-          console.error('Gagal menyegarkan lokasi:', err);
-          setCheckingLocation(false);
-          toast.error('Gagal menyegarkan lokasi. Pastikan izin lokasi aktif.');
-        },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-      );
-    } else {
+    try {
+      const coords = await getCoordinates();
+      setUserLocation(coords);
+      evaluateLocations(coords.latitude, coords.longitude, offices);
       setCheckingLocation(false);
-      toast.error('Geolokasi tidak didukung oleh browser Anda');
+      toast.success(isSimulatingGPS ? 'Lokasi simulasi berhasil diperbarui' : 'Lokasi GPS berhasil diperbarui');
+    } catch (err: any) {
+      console.error('Gagal menyegarkan lokasi:', err);
+      setCheckingLocation(false);
+      toast.error('Gagal menyegarkan lokasi. Pastikan izin lokasi aktif atau gunakan Simulator.');
     }
   };
 
@@ -270,20 +325,9 @@ export default function CheckInOut() {
     try {
       if (!user) throw new Error('Harap login terlebih dahulu');
 
-      if (!navigator.geolocation) {
-        throw new Error('Geolokasi tidak didukung oleh browser Anda');
-      }
-
       setMessage('Mengambil koordinat GPS Anda...');
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        });
-      });
-
-      const { latitude, longitude } = position.coords;
+      const coords = await getCoordinates();
+      const { latitude, longitude } = coords;
       
       const video = webcamRef.current?.video;
       if (!video) {
@@ -378,7 +422,8 @@ export default function CheckInOut() {
 
       // Filter offices list if user is restricted to a specific office
       if (dbUser && dbUser.assignedOfficeId && dbUser.assignedOfficeId !== 'all') {
-        officesList = officesList.filter(o => o.id === dbUser.assignedOfficeId);
+        const mappedId = dbUser.assignedOfficeId === 'default_office' ? 'default' : dbUser.assignedOfficeId;
+        officesList = officesList.filter(o => o.id === mappedId);
         if (officesList.length === 0) {
           throw new Error('Kantor khusus yang ditugaskan kepada Anda tidak ditemukan atau telah dihapus. Hubungi admin.');
         }
@@ -620,6 +665,72 @@ export default function CheckInOut() {
               </div>
             </div>
           )}
+
+          {/* GPS Simulator panel for sandbox testing */}
+          <div className="mt-2 pt-3 border-t border-slate-200/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${isSimulatingGPS ? 'bg-amber-500 animate-pulse' : 'bg-slate-300'}`}></span>
+                Mode Demo: Simulator GPS
+              </span>
+              <button
+                type="button"
+                onClick={() => handleToggleSimulation(!isSimulatingGPS)}
+                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                  isSimulatingGPS 
+                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' 
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                {isSimulatingGPS ? 'Matikan Simulator' : 'Aktifkan Simulator'}
+              </button>
+            </div>
+
+            {isSimulatingGPS && (
+              <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100/80 space-y-2.5">
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Gunakan simulator ini untuk menguji validasi geofencing di lingkungan sandbox / iframe tanpa harus berada di lokasi fisik kantor.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {offices.map((office) => (
+                    <button
+                      key={office.id}
+                      type="button"
+                      onClick={() => {
+                        const coords = { latitude: office.latitude, longitude: office.longitude };
+                        setSimulatedCoords(coords);
+                        setUserLocation(coords);
+                        evaluateLocations(coords.latitude, coords.longitude, offices);
+                        toast.success(`GPS diatur tepat di "${office.name}" (Dalam Radius)`);
+                      }}
+                      className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 transition cursor-pointer"
+                    >
+                      Presisi: {office.name}
+                    </button>
+                  ))}
+                  
+                  {nearestOffice && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const coords = { 
+                          latitude: nearestOffice.latitude + 0.005, 
+                          longitude: nearestOffice.longitude + 0.005 
+                        };
+                        setSimulatedCoords(coords);
+                        setUserLocation(coords);
+                        evaluateLocations(coords.latitude, coords.longitude, offices);
+                        toast.error(`GPS diatur di luar jangkauan "${nearestOffice.name}" (Luar Radius)`);
+                      }}
+                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg text-[10px] font-bold text-rose-700 transition cursor-pointer"
+                    >
+                      Atur Luar Jangkauan
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -630,12 +741,23 @@ export default function CheckInOut() {
             audio={false}
             ref={webcamRef}
             screenshotFormat="image/jpeg"
-            videoConstraints={{ facingMode: "user" }}
+            videoConstraints={{ facingMode }}
             className="object-cover w-full h-full"
             playsInline={true}
             autoPlay={true}
             muted={true}
           />
+          
+          {/* Switch Camera Button */}
+          <button
+            type="button"
+            onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
+            className="absolute top-4 right-4 bg-black/60 hover:bg-black/85 active:scale-95 text-white px-3 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all border border-white/20 backdrop-blur-sm cursor-pointer hover:shadow-lg shadow-black/20"
+          >
+            <RefreshCw size={13} className="animate-pulse" />
+            <span>{facingMode === 'user' ? 'Kamera Belakang' : 'Kamera Depan'}</span>
+          </button>
+
           <div className="absolute bottom-4 left-0 right-0 flex justify-center text-white">
             <div className="bg-black/50 px-3 py-1.5 rounded-full flex items-center space-x-2 text-sm backdrop-blur-sm">
               <Camera size={16} />

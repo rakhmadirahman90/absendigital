@@ -2,11 +2,33 @@ import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import React, { useEffect, useState } from 'react';
-import { UserCircle2, Briefcase, Building, MapPin, Edit3, Save, Phone, Lock, X, Sun, Moon, Sparkles, CloudSun, CloudMoon } from 'lucide-react';
+import { UserCircle2, Briefcase, Building, MapPin, Edit3, Save, Phone, Lock, X, Sun, Moon, Sparkles, CloudSun, CloudMoon, BarChart2 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import RealTimeClock from '../components/RealTimeClock';
 import { toast } from 'react-hot-toast';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+function getWeekDates() {
+  const current = new Date();
+  const day = current.getDay(); // 0 is Sunday, 1 is Monday, ..., 6 is Saturday
+  const mondayDiff = day === 0 ? -6 : 1 - day; // diff to Monday
+  const monday = new Date(current);
+  monday.setDate(current.getDate() + mondayDiff);
+  
+  const dates = [];
+  const daysName = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const dateString = d.toISOString().split('T')[0];
+    dates.push({
+      dayName: daysName[i],
+      dateString
+    });
+  }
+  return dates;
+}
 
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371e3; // Radius of the earth in m
@@ -25,6 +47,7 @@ export default function Dashboard() {
   const { user, dbUser } = useAuth();
   const [time, setTime] = useState(new Date());
   const [todayAttendance, setTodayAttendance] = useState<any>(null);
+  const [weeklyTrends, setWeeklyTrends] = useState<any[]>([]);
   const [geofencingStatus, setGeofencingStatus] = useState<'checking' | 'inside' | 'outside' | 'error'>('checking');
   const [geofencingMessage, setGeofencingMessage] = useState('Mengecek lokasi...');
 
@@ -90,6 +113,30 @@ export default function Dashboard() {
         const todayStr = new Date().toISOString().split('T')[0];
         const todayRecord = records.find((r: any) => r.tanggal === todayStr);
         setTodayAttendance(todayRecord || null);
+
+        // Process current week's trends (Monday to Friday)
+        const weekDates = getWeekDates().slice(0, 5); // Just Mon-Fri
+        const trends = weekDates.map(wd => {
+          const dayRecord = records.find((r: any) => r.tanggal === wd.dateString) as any;
+          let onTime = 0;
+          let late = 0;
+          
+          if (dayRecord) {
+            if (dayRecord.status === 'Terlambat') {
+              late = 1;
+            } else {
+              onTime = 1;
+            }
+          }
+          
+          return {
+            name: wd.dayName.substring(0, 3), // "Sen", "Sel", "Rab", etc.
+            'Tepat Waktu': onTime,
+            'Terlambat': late,
+            hadir: dayRecord ? 1 : 0
+          };
+        });
+        setWeeklyTrends(trends);
     }, (error) => {
         console.error("Failed fetching history realtime", error);
     });
@@ -132,7 +179,8 @@ export default function Dashboard() {
 
         // Filter based on user assignment
         if (dbUser && dbUser.assignedOfficeId && dbUser.assignedOfficeId !== 'all') {
-          officesList = officesList.filter((o: any) => o.id === dbUser.assignedOfficeId);
+          const mappedId = dbUser.assignedOfficeId === 'default_office' ? 'default' : dbUser.assignedOfficeId;
+          officesList = officesList.filter((o: any) => o.id === mappedId);
         }
 
         if (officesList.length === 0) {
@@ -355,31 +403,90 @@ export default function Dashboard() {
         </div>
       </div>
       
-      {/* Today's Summary Card */}
-      <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg}`}>
-        <h3 className={`text-lg font-bold mb-4 ${themeTextVal}`}>Ringkasan Hari Ini</h3>
-        {todayAttendance ? (
-           <div className="flex flex-col space-y-4">
-             <div className={`flex justify-between items-center py-3 border-b ${themeBorder}`}>
-                <span className={themeTextLabel}>Jam Masuk</span>
-                <span className="font-semibold font-mono text-emerald-500">{todayAttendance.jam_masuk}</span>
-             </div>
-             <div className={`flex justify-between items-center py-3 border-b ${themeBorder}`}>
-                <span className={themeTextLabel}>Jam Pulang</span>
-                <span className={`font-semibold font-mono ${themeTextVal}`}>{todayAttendance.jam_pulang || '--:--:--'}</span>
-             </div>
-             <div className="flex justify-between items-center py-3">
-                <span className={themeTextLabel}>Status</span>
-                <span className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${isDaytime ? 'bg-emerald-50 text-emerald-700' : 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20'}`}>
-                  {todayAttendance.status}
-                </span>
-             </div>
-           </div>
-        ) : (
-           <div className={`text-center py-8 ${themeTextLabel}`}>
-             <p>Anda belum melakukan absensi hari ini.</p>
-           </div>
-        )}
+      {/* Summary and Trends Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Today's Summary Card */}
+        <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg} lg:col-span-1 flex flex-col justify-between`}>
+          <div>
+            <h3 className={`text-lg font-bold mb-4 ${themeTextVal}`}>Ringkasan Hari Ini</h3>
+            {todayAttendance ? (
+               <div className="flex flex-col space-y-4">
+                 <div className={`flex justify-between items-center py-3 border-b ${themeBorder}`}>
+                    <span className={themeTextLabel}>Jam Masuk</span>
+                    <span className="font-semibold font-mono text-emerald-500">{todayAttendance.jam_masuk}</span>
+                 </div>
+                 <div className={`flex justify-between items-center py-3 border-b ${themeBorder}`}>
+                    <span className={themeTextLabel}>Jam Pulang</span>
+                    <span className={`font-semibold font-mono ${themeTextVal}`}>{todayAttendance.jam_pulang || '--:--:--'}</span>
+                 </div>
+                 <div className="flex justify-between items-center py-3">
+                    <span className={themeTextLabel}>Status</span>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${isDaytime ? 'bg-emerald-50 text-emerald-700' : 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20'}`}>
+                      {todayAttendance.status}
+                    </span>
+                 </div>
+               </div>
+            ) : (
+               <div className={`text-center py-12 ${themeTextLabel}`}>
+                 <p className="text-sm font-medium">Anda belum melakukan absensi hari ini.</p>
+                 <p className="text-xs text-slate-400 mt-1">Silakan lakukan presensi masuk di menu Check-in.</p>
+               </div>
+            )}
+          </div>
+        </div>
+
+        {/* Weekly Attendance Trend Card */}
+        <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg} lg:col-span-2 flex flex-col justify-between`}>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className={`text-lg font-bold flex items-center gap-2 ${themeTextVal}`}>
+                <BarChart2 size={20} className={isDaytime ? "text-blue-500" : "text-indigo-400"} />
+                Tren Kehadiran Mingguan Anda
+              </h3>
+              <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                Minggu Ini
+              </span>
+            </div>
+            <p className={`text-xs ${themeTextLabel} mb-4`}>
+              Statistik perbandingan status presensi (Tepat Waktu vs Terlambat) dari Senin s/d Jumat.
+            </p>
+          </div>
+
+          <div className="h-48 w-full mt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={weeklyTrends} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDaytime ? "#f1f5f9" : "#1e293b"} />
+                <XAxis dataKey="name" stroke={isDaytime ? "#94a3b8" : "#64748b"} fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke={isDaytime ? "#94a3b8" : "#64748b"} fontSize={11} tickLine={false} axisLine={false} ticks={[0, 1]} />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: isDaytime ? '#0f172a' : '#1e293b', 
+                    borderRadius: '12px', 
+                    border: 'none', 
+                    color: '#fff',
+                    fontSize: '12px' 
+                  }}
+                  labelStyle={{ fontWeight: 'bold', color: '#94a3b8' }}
+                />
+                <Legend iconSize={8} wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                <Bar dataKey="Tepat Waktu" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                <Bar dataKey="Terlambat" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={30} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className={`flex items-center justify-between border-t ${themeBorder} pt-4 mt-4 text-xs`}>
+            <span className={`${themeTextLabel} font-medium`}>Ringkasan Minggu Ini:</span>
+            <div className="flex gap-3 text-[11px] font-bold">
+              <span className="text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md">
+                {weeklyTrends.filter(t => t['Tepat Waktu'] > 0).length} Tepat Waktu
+              </span>
+              <span className="text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded-md">
+                {weeklyTrends.filter(t => t['Terlambat'] > 0).length} Terlambat
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Profil Saya Card */}

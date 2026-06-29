@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, query, where, onSnapshot, getDocs, limit, orderBy } from 'firebase/firestore';
 import { Users, CheckCircle, Clock, Download, BarChart2, AlertCircle, Eye, Calendar, ArrowRight, FileCheck, CheckCircle2, RefreshCw } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 
@@ -38,16 +38,6 @@ export default function DashboardTab() {
         const belumAbsen = Math.max(0, totalKaryawan - (prev.hadirHariIni || 0) - (prev.izinCutiHariIni || 0));
         return { ...prev, totalKaryawan, belumAbsen };
       });
-
-      // Generate realistic weekly data based on database employee count
-      const mockWeekly = [
-        { name: 'Sen', hadir: Math.max(1, Math.floor(totalKaryawan * 0.85)) },
-        { name: 'Sel', hadir: Math.max(1, Math.floor(totalKaryawan * 0.90)) },
-        { name: 'Rab', hadir: Math.max(1, Math.floor(totalKaryawan * 0.88)) },
-        { name: 'Kam', hadir: Math.max(1, Math.floor(totalKaryawan * 0.92)) },
-        { name: 'Jum', hadir: Math.max(1, Math.floor(totalKaryawan * 0.86)) },
-      ];
-      setWeeklyData(mockWeekly);
     });
 
     // 2. Monitor Today's Attendance Real-time
@@ -91,7 +81,6 @@ export default function DashboardTab() {
     });
 
     // 4. Monitor Pending Approvals (Leave Requests + Overtimes)
-    // We will combine leaves and overtimes that are pending
     const unsubLeavePending = onSnapshot(query(collection(db, 'leave_requests'), where('status', '==', 'pending')), (leaveSnap) => {
       const leaves: any[] = [];
       leaveSnap.forEach(doc => {
@@ -114,11 +103,48 @@ export default function DashboardTab() {
       return () => unsubOvertimePending();
     });
 
+    // 5. Monitor Current Week's Attendance Trends (On-Time vs Late)
+    const unsubWeeklyTrends = onSnapshot(collection(db, 'attendance'), (snapshot) => {
+      const current = new Date();
+      const day = current.getDay();
+      const mondayDiff = day === 0 ? -6 : 1 - day;
+      const monday = new Date(current);
+      monday.setDate(current.getDate() + mondayDiff);
+      
+      const weekDates = [];
+      const dayNames = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum'];
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        weekDates.push({
+          name: dayNames[i],
+          dateStr: d.toISOString().split('T')[0]
+        });
+      }
+
+      const allRecords = snapshot.docs.map(doc => doc.data());
+      
+      const parsedWeekly = weekDates.map(wd => {
+        const dayRecords = allRecords.filter((r: any) => r.tanggal === wd.dateStr);
+        const tepatWaktu = dayRecords.filter((r: any) => r.status !== 'Terlambat').length;
+        const terlambat = dayRecords.filter((r: any) => r.status === 'Terlambat').length;
+        
+        return {
+          name: wd.name,
+          'Tepat Waktu': tepatWaktu,
+          'Terlambat': terlambat,
+        };
+      });
+      
+      setWeeklyData(parsedWeekly);
+    });
+
     return () => {
       unsubUsers();
       unsubAttendance();
       unsubLeave();
       unsubLeavePending();
+      unsubWeeklyTrends();
     };
   }, []);
 
@@ -296,12 +322,14 @@ export default function DashboardTab() {
               <BarChart data={weeklyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: 'none', color: '#fff' }}
                   labelStyle={{ fontWeight: 'bold', color: '#94a3b8' }}
                 />
-                <Bar dataKey="hadir" fill="#3b82f6" radius={[6, 6, 0, 0]} maxBarSize={45} />
+                <Legend iconSize={8} wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                <Bar dataKey="Tepat Waktu" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={30} />
+                <Bar dataKey="Terlambat" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={30} />
               </BarChart>
             </ResponsiveContainer>
           </div>

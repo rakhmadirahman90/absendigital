@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter } from 'lucide-react';
+import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter, Printer, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -107,6 +107,44 @@ export default function AbsensiTab() {
         }
     };
 
+    const handleExportAdminCSV = () => {
+        if (displayedAttendance.length === 0) {
+            toast.error('Tidak ada data untuk diekspor.');
+            return;
+        }
+        const headers = ['No', 'Nama Karyawan', 'Divisi', 'Jam Masuk', 'Jam Pulang', 'Status', 'Alamat Masuk', 'Latitude', 'Longitude'];
+        const rows = displayedAttendance.map((item, idx) => {
+            const u = usersMap[item.user_id] || {};
+            return [
+                idx + 1,
+                `"${(u.nama || 'Tidak Dikenal').replace(/"/g, '""')}"`,
+                `"${(u.divisi || '-').replace(/"/g, '""')}"`,
+                item.jam_masuk || '-',
+                item.jam_pulang || '-',
+                item.status || 'Hadir',
+                item.alamat_masuk ? `"${item.alamat_masuk.replace(/"/g, '""')}"` : '-',
+                item.latitude_masuk || '-',
+                item.longitude_masuk || '-'
+            ];
+        });
+
+        const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Laporan_Absensi_Harian_${filterDate}_${filterDivisi || 'Semua_Divisi'}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('Laporan harian berhasil diekspor.');
+    };
+
+    const handlePrintDaily = () => {
+        window.print();
+    };
+
     // Derived statistics over unfiltered attendance
     const totalCount = attendance.length;
     const hadirCount = attendance.filter(item => item.status === 'Hadir').length;
@@ -131,9 +169,53 @@ export default function AbsensiTab() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h3 className="text-xl font-bold text-slate-800">Monitor Absensi</h3>
-                <p className="text-xs text-slate-500 mt-1">Kelola dan pantau ketepatan waktu, foto selfie, serta lokasi absen harian karyawan.</p>
+            <style>{`
+                @media print {
+                    body * {
+                        visibility: hidden;
+                    }
+                    #print-daily-area, #print-daily-area * {
+                        visibility: visible;
+                    }
+                    #print-daily-area {
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 100%;
+                        background: white !important;
+                        color: black !important;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                }
+            `}</style>
+
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 no-print">
+                <div>
+                    <h3 className="text-xl font-bold text-slate-800">Monitor Absensi</h3>
+                    <p className="text-xs text-slate-500 mt-1">Kelola dan pantau ketepatan waktu, foto selfie, serta lokasi absen harian karyawan.</p>
+                </div>
+                
+                {/* Admin Export Actions */}
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        onClick={handlePrintDaily}
+                        disabled={displayedAttendance.length === 0}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl border border-slate-200 shadow-sm transition-all text-xs disabled:opacity-50 cursor-pointer"
+                    >
+                        <Printer size={14} />
+                        <span>Cetak Harian</span>
+                    </button>
+                    <button
+                        onClick={handleExportAdminCSV}
+                        disabled={displayedAttendance.length === 0}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-sm transition-all text-xs disabled:opacity-50 cursor-pointer"
+                    >
+                        <Download size={14} />
+                        <span>Ekspor CSV</span>
+                    </button>
+                </div>
             </div>
 
             {/* Interactive Statistics Cards */}
@@ -608,6 +690,89 @@ export default function AbsensiTab() {
                     </div>
                 </div>
             )}
+
+            {/* --- ADMIN DAILY PRINT AREA (ONLY SHOWN IN PRINT) --- */}
+            <div id="print-daily-area" className="hidden p-8 font-sans space-y-6">
+                <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
+                    <div>
+                        <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">HRIS ABSENSI ONLINE</h1>
+                        <p className="text-xs text-slate-500 font-medium">LAPORAN MONITORING ABSENSI HARIAN KARYAWAN</p>
+                    </div>
+                    <div className="text-right text-xs">
+                        <p className="font-bold">Admin Portal</p>
+                        <p className="text-slate-500">Tanggal Laporan: {filterDate}</p>
+                        {filterDivisi && <p className="text-slate-500">Divisi: {filterDivisi}</p>}
+                        <p className="text-slate-400">Dicetak: {format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}</p>
+                    </div>
+                </div>
+
+                {/* Print Summary Stats */}
+                <div className="grid grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="text-center">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Presensi</p>
+                        <p className="text-xl font-bold mt-1 text-slate-900">{totalCount} Orang</p>
+                    </div>
+                    <div className="text-center border-l border-slate-200">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tepat Waktu</p>
+                        <p className="text-xl font-bold mt-1 text-emerald-600">{hadirCount} Orang</p>
+                    </div>
+                    <div className="text-center border-l border-slate-200">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Terlambat</p>
+                        <p className="text-xl font-bold mt-1 text-rose-600">{terlambatCount} Orang</p>
+                    </div>
+                    <div className="text-center border-l border-slate-200">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Izin/Sakit/Alpa</p>
+                        <p className="text-xl font-bold mt-1 text-amber-600">{absenCount} Orang</p>
+                    </div>
+                </div>
+
+                {/* Print Daily Table */}
+                <table className="w-full text-left text-[11px] border-collapse mt-4">
+                    <thead>
+                        <tr className="border-b border-slate-300 bg-slate-100 text-slate-700">
+                            <th className="p-2 font-bold uppercase">No</th>
+                            <th className="p-2 font-bold uppercase">Nama Karyawan</th>
+                            <th className="p-2 font-bold uppercase">Divisi</th>
+                            <th className="p-2 font-bold uppercase">Jam Masuk</th>
+                            <th className="p-2 font-bold uppercase">Jam Pulang</th>
+                            <th className="p-2 font-bold uppercase">Status</th>
+                            <th className="p-2 font-bold uppercase">Alamat Check-in</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                        {displayedAttendance.map((item, idx) => {
+                            const u = usersMap[item.user_id] || {};
+                            return (
+                                <tr key={item.id} className="align-top">
+                                    <td className="p-2">{idx + 1}</td>
+                                    <td className="p-2 font-semibold text-slate-900">{u.nama || 'Tidak Dikenal'}</td>
+                                    <td className="p-2">{u.divisi || '-'}</td>
+                                    <td className="p-2 font-mono font-bold text-emerald-600">{item.jam_masuk || '--:--'}</td>
+                                    <td className="p-2 font-mono text-slate-700">{item.jam_pulang || '--:--'}</td>
+                                    <td className="p-2 font-semibold capitalize">{item.status || 'Hadir'}</td>
+                                    <td className="p-2 text-slate-500 max-w-xs">{item.alamat_masuk || '-'}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+
+                {/* Print Signatures */}
+                <div className="pt-12 grid grid-cols-2 gap-12 text-center text-xs">
+                    <div>
+                        <p className="text-slate-400">Dibuat Oleh,</p>
+                        <div className="h-16"></div>
+                        <p className="font-bold underline uppercase">HR Staff</p>
+                        <p className="text-[10px] text-slate-400">HRIS Administration</p>
+                    </div>
+                    <div>
+                        <p className="text-slate-400">Disetujui Oleh,</p>
+                        <div className="h-16"></div>
+                        <p className="font-bold underline uppercase">HR Manager</p>
+                        <p className="text-[10px] text-slate-400">HRIS Online System</p>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
