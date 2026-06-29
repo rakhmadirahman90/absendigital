@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
-import { Building, Plus, MapPin, Compass, Trash2, Edit3, Check, X, ExternalLink, Globe } from 'lucide-react';
+import { Building, Plus, MapPin, Compass, Trash2, Edit3, Check, X, ExternalLink, Globe, Sparkles } from 'lucide-react';
 
 interface OfficeLocation {
   id: string;
@@ -16,6 +16,7 @@ export default function PengaturanTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [offices, setOffices] = useState<OfficeLocation[]>([]);
+  const [isExtracting, setIsExtracting] = useState(false);
   
   // Form State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -24,6 +25,58 @@ export default function PengaturanTab() {
   const [formLat, setFormLat] = useState<number | ''>('');
   const [formLng, setFormLng] = useState<number | ''>('');
   const [formRadius, setFormRadius] = useState<number>(100);
+
+  const handleAIOfficeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsExtracting(true);
+    const toastId = toast.loading('AI sedang memindai gambar & mengekstrak koordinat lokasi...');
+
+    try {
+      const base64Image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch('/api/extract-office', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Image })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Gagal berkomunikasi dengan AI');
+      }
+
+      const resData = await response.json();
+      if (!resData.success || !resData.data) {
+        throw new Error('AI tidak berhasil mengekstrak data lokasi dari dokumen/screenshot ini.');
+      }
+
+      const extracted = resData.data;
+
+      // Populate form state and open form
+      setFormName(extracted.name || 'Cabang Baru');
+      setFormLat(extracted.latitude);
+      setFormLng(extracted.longitude);
+      setFormRadius(extracted.radius || 100);
+      setEditingOfficeId(null);
+      setIsFormOpen(true);
+
+      toast.success(`AI Berhasil! Menemukan lokasi "${extracted.name}" dengan koordinat (${extracted.latitude}, ${extracted.longitude}). Silakan periksa kembali lalu simpan.`, { id: toastId });
+
+    } catch (error: any) {
+      console.error("Gagal melakukan ekstraksi koordinat via AI:", error);
+      toast.error(error.message || 'Gagal memproses gambar menggunakan AI', { id: toastId });
+    } finally {
+      setIsExtracting(false);
+      e.target.value = '';
+    }
+  };
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -179,13 +232,29 @@ export default function PengaturanTab() {
         </div>
         
         {!isFormOpen && (
-          <button
-            onClick={handleOpenAdd}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition shadow-sm"
-          >
-            <Plus size={14} />
-            <span>Tambah Lokasi Baru</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <label 
+              className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-sm cursor-pointer"
+              title="Unggah screenshot Google Maps atau teks alamat untuk diekstrak koordinat GPS-nya otomatis oleh AI"
+            >
+              <Sparkles size={13} className={isExtracting ? "animate-spin" : ""} />
+              <span>{isExtracting ? "Memproses AI..." : "Impor Koordinat (AI)"}</span>
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={handleAIOfficeUpload} 
+                disabled={isExtracting}
+                className="hidden" 
+              />
+            </label>
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition shadow-sm cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>Tambah Lokasi Baru</span>
+            </button>
+          </div>
         )}
       </div>
 

@@ -384,6 +384,29 @@ export default function CheckInOut() {
         console.error('Reverse geocoding error:', err);
       }
 
+      setMessage('Melakukan verifikasi wajah berbasis AI...');
+      try {
+        const verifyResponse = await fetch('/api/verify-selfie', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: rawImageSrc }),
+        });
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          if (verifyData.success) {
+            if (!verifyData.is_valid) {
+              throw new Error(`Verifikasi AI Gagal: ${verifyData.reason || 'Wajah manusia tidak terdeteksi secara akurat'}`);
+            }
+            toast.success(`AI Face OK: ${verifyData.reason}`);
+          }
+        }
+      } catch (aiErr: any) {
+        if (aiErr.message?.startsWith('Verifikasi AI Gagal')) {
+          throw aiErr;
+        }
+        console.warn('AI verification bypassed or failed to fetch:', aiErr);
+      }
+
       setMessage('Memproses foto & menempelkan watermark...');
       const watermarkedImageSrc = await drawWatermark(
         rawImageSrc,

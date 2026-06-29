@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
-import { Plus, Edit2, Trash2, Building, UserPlus } from 'lucide-react';
+import { Plus, Edit2, Trash2, Building, UserPlus, Upload, Download, Sparkles } from 'lucide-react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
 
@@ -13,26 +13,176 @@ export default function KaryawanTab() {
     const [formData, setFormData] = useState<any>({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all' });
     const [editingId, setEditingId] = useState<string | null>(null);
     const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [isExtracting, setIsExtracting] = useState(false);
 
-    const importEmployeeDataFromImage = async () => {
-        const employeesToImport = [
-            { waNumber: '0816200001', nama: 'ASMA', divisi: '162', jabatan: 'ADMIN', role: 'karyawan', password: '123456', assignedOfficeId: 'all' },
-            { waNumber: '0816200002', nama: 'JUNET', divisi: '162', jabatan: 'OPERATOR', role: 'karyawan', password: '123456', assignedOfficeId: 'all' },
-            { waNumber: '0816200003', nama: 'ABI', divisi: '162', jabatan: 'OPERATOR', role: 'karyawan', password: '123456', assignedOfficeId: 'all' },
-            { waNumber: '0816200004', nama: 'JUMA', divisi: '162', jabatan: 'PENGAWAS GUD', role: 'karyawan', password: '123456', assignedOfficeId: 'all' },
-            { waNumber: '0816200005', nama: 'PUNDU', divisi: '162', jabatan: 'OPERATOR', role: 'karyawan', password: '123456', assignedOfficeId: 'all' }
-        ];
+    const handleAIPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsExtracting(true);
+        const toastId = toast.loading('AI sedang memindai foto & memproses daftar karyawan...');
 
         try {
-            for (const emp of employeesToImport) {
-                const userId = `wa-${emp.waNumber}`;
-                await setDoc(doc(db, 'users', userId), emp, { merge: true });
+            const base64Image = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = (error) => reject(error);
+                reader.readAsDataURL(file);
+            });
+
+            const response = await fetch('/api/extract-employees', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ image: base64Image })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Gagal berkomunikasi dengan layanan AI');
             }
-            toast.success('Berhasil mengimpor 5 data karyawan dari gambar');
-        } catch (error) {
-            console.error("Gagal mengimpor data karyawan:", error);
-            toast.error('Gagal mengimpor data karyawan');
+
+            const data = await response.json();
+            if (!data.success || !data.employees || data.employees.length === 0) {
+                throw new Error('AI tidak menemukan data karyawan dalam gambar tersebut. Pastikan teks atau tabel terlihat jelas.');
+            }
+
+            let importCount = 0;
+            for (const emp of data.employees) {
+                const waNumber = emp.waNumber ? emp.waNumber.replace(/\D/g, '') : '';
+                if (!waNumber || !emp.nama) continue;
+
+                const userId = `wa-${waNumber}`;
+                const payload = {
+                    waNumber,
+                    nama: emp.nama.toUpperCase(),
+                    divisi: emp.divisi || '162',
+                    jabatan: emp.jabatan || 'OPERATOR',
+                    role: emp.role === 'admin' ? 'admin' : 'karyawan',
+                    password: emp.password || '123456',
+                    assignedOfficeId: emp.assignedOfficeId || 'all'
+                };
+
+                await setDoc(doc(db, 'users', userId), payload, { merge: true });
+                importCount++;
+            }
+
+            toast.success(`AI Berhasil! Mengimpor ${importCount} karyawan dari foto.`, { id: toastId });
+        } catch (error: any) {
+            console.error("Gagal melakukan ekstraksi data via AI:", error);
+            toast.error(error.message || 'Gagal memproses gambar menggunakan AI', { id: toastId });
+        } finally {
+            setIsExtracting(false);
+            e.target.value = '';
         }
+    };
+
+    const handleDownloadTemplate = () => {
+        const headers = ['waNumber', 'nama', 'divisi', 'jabatan', 'password', 'role', 'assignedOfficeId'];
+        const sampleRows = [
+            ['0816200001', 'ASMA', '162', 'ADMIN', '123456', 'karyawan', 'all'],
+            ['0816200002', 'JUNET', '162', 'OPERATOR', '123456', 'karyawan', 'all'],
+            ['0816200003', 'ABI', '162', 'OPERATOR', '123456', 'karyawan', 'all'],
+            ['0816200004', 'JUMA', '162', 'PENGAWAS GUD', '123456', 'karyawan', 'all'],
+            ['0816200005', 'PUNDU', '162', 'OPERATOR', '123456', 'karyawan', 'all']
+        ];
+        const csvContent = "\uFEFF" + [headers.join(','), ...sampleRows.map(e => e.join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "Format_Import_Karyawan.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('Template CSV berhasil diunduh');
+    };
+
+    const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const text = event.target?.result as string;
+            if (!text) {
+                toast.error("File CSV kosong atau tidak valid");
+                return;
+            }
+
+            try {
+                const lines = text.split(/\r?\n/);
+                if (lines.length < 2) {
+                    toast.error("File CSV harus memiliki baris header dan minimal 1 baris data");
+                    return;
+                }
+
+                // Parse header line to find column indices
+                const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                
+                // Map common column names to keys
+                const getIndex = (aliases: string[]) => {
+                    return headers.findIndex(h => aliases.some(alias => h.includes(alias)));
+                };
+
+                const waIdx = getIndex(['wanumber', 'wa', 'phone', 'telepon', 'whatsapp', 'number']);
+                const nameIdx = getIndex(['nama', 'name', 'lengkap']);
+                const divIdx = getIndex(['divisi', 'division', 'dept', 'departemen']);
+                const jabIdx = getIndex(['jabatan', 'role', 'position', 'title']);
+                const roleIdx = getIndex(['role', 'akses', 'hak']);
+                const passIdx = getIndex(['pass', 'password', 'sandi']);
+                const officeIdx = getIndex(['office', 'kantor', 'lokasi', 'assignedofficeid']);
+
+                if (waIdx === -1 || nameIdx === -1) {
+                    toast.error("Format CSV tidak dikenal. Harus memiliki minimal kolom 'waNumber' dan 'nama'.");
+                    return;
+                }
+
+                let importCount = 0;
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    // Parse line split by comma
+                    const cols = line.split(',').map(c => {
+                        let val = c.trim();
+                        if (val.startsWith('"') && val.endsWith('"')) {
+                            val = val.substring(1, val.length - 1);
+                        }
+                        return val;
+                    });
+
+                    const waNumberRaw = cols[waIdx];
+                    if (!waNumberRaw) continue;
+                    const waNumber = waNumberRaw.replace(/\D/g, '');
+                    const nama = cols[nameIdx];
+
+                    if (!waNumber || !nama) continue;
+
+                    const emp = {
+                        waNumber,
+                        nama,
+                        divisi: divIdx !== -1 ? cols[divIdx] || '' : '',
+                        jabatan: jabIdx !== -1 ? cols[jabIdx] || '' : '',
+                        role: roleIdx !== -1 ? (cols[roleIdx]?.toLowerCase() === 'admin' ? 'admin' : 'karyawan') : 'karyawan',
+                        password: passIdx !== -1 ? cols[passIdx] || '123456' : '123456',
+                        assignedOfficeId: officeIdx !== -1 ? cols[officeIdx] || 'all' : 'all'
+                    };
+
+                    const userId = `wa-${waNumber}`;
+                    await setDoc(doc(db, 'users', userId), emp, { merge: true });
+                    importCount++;
+                }
+
+                toast.success(`Berhasil mengimpor ${importCount} data karyawan dari CSV`);
+                e.target.value = '';
+            } catch (error) {
+                console.error("Gagal memproses file CSV:", error);
+                toast.error("Gagal memproses file CSV. Pastikan format pemisah koma valid.");
+            }
+        };
+        reader.readAsText(file);
     };
 
     useEffect(() => {
@@ -136,12 +286,40 @@ export default function KaryawanTab() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <button 
-                        onClick={importEmployeeDataFromImage}
-                        className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 active:scale-95 transition-all shadow-sm shadow-emerald-500/15 cursor-pointer"
+                        onClick={handleDownloadTemplate}
+                        className="flex items-center space-x-2 px-3 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold hover:bg-slate-50 active:scale-95 transition-all shadow-sm cursor-pointer"
+                        title="Unduh contoh format CSV untuk pengisian data massal"
                     >
-                        <UserPlus size={15} />
-                        <span>Impor 5 Karyawan (ASMA, dll.)</span>
+                        <Download size={14} />
+                        <span>Unduh Template CSV</span>
                     </button>
+                    <label 
+                        className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 active:scale-95 transition-all shadow-sm shadow-emerald-500/15 cursor-pointer"
+                        title="Unggah berkas CSV untuk mengimpor data karyawan"
+                    >
+                        <Upload size={14} />
+                        <span>Impor CSV</span>
+                        <input 
+                            type="file" 
+                            accept=".csv" 
+                            onChange={handleCSVUpload} 
+                            className="hidden" 
+                        />
+                    </label>
+                    <label 
+                        className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-lg text-xs font-semibold hover:from-violet-700 hover:to-indigo-700 active:scale-95 transition-all shadow-sm shadow-violet-500/20 cursor-pointer"
+                        title="Unggah foto atau screenshot daftar karyawan untuk diimpor otomatis oleh AI"
+                    >
+                        <Sparkles size={14} className={isExtracting ? "animate-spin" : ""} />
+                        <span>{isExtracting ? "Memproses AI..." : "Impor via Foto (AI)"}</span>
+                        <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={handleAIPhotoUpload} 
+                            disabled={isExtracting}
+                            className="hidden" 
+                        />
+                    </label>
                     <button 
                         onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all' }); }}
                         className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 active:scale-95 transition-all shadow-sm shadow-blue-500/15 cursor-pointer"

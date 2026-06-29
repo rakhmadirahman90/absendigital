@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc } from 'firebase/firestore';
-import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown, Edit, Trash2 } from 'lucide-react';
+import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc, addDoc } from 'firebase/firestore';
+import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown, Edit, Trash2, Sparkles } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -14,6 +14,106 @@ export default function ApprovalTab() {
     const [usersMap, setUsersMap] = useState<Record<string, any>>({});
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'leave' | 'overtime'>('leave');
+    const [isExtracting, setIsExtracting] = useState(false);
+
+    const handleAIApprovalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsExtracting(true);
+        const toastId = toast.loading('AI sedang memindai dokumen & memproses pengajuan...');
+
+        try {
+            const base64Image = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = (error) => reject(error);
+                reader.readAsDataURL(file);
+            });
+
+            const response = await fetch('/api/extract-approval', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64Image })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Gagal berkomunikasi dengan AI');
+            }
+
+            const resData = await response.json();
+            if (!resData.success || !resData.data) {
+                throw new Error('AI tidak berhasil mengekstrak data dari dokumen ini.');
+            }
+
+            const extracted = resData.data;
+
+            // Search for matching employee in usersMap by name or waNumber
+            let matchedUserId = '';
+            let matchedUserNama = '';
+            
+            const searchWa = extracted.waNumber ? extracted.waNumber.replace(/\D/g, '') : '';
+            const searchName = extracted.nama ? extracted.nama.toLowerCase().trim() : '';
+
+            // Try WA exact match first
+            if (searchWa && usersMap[`wa-${searchWa}`]) {
+                matchedUserId = `wa-${searchWa}`;
+                matchedUserNama = usersMap[matchedUserId].nama;
+            } else {
+                // Try fuzzy name match
+                const match = Object.entries(usersMap).find(([_, u]) => {
+                    const usr = u as any;
+                    const uName = (usr.nama || '').toLowerCase().trim();
+                    return uName.includes(searchName) || searchName.includes(uName);
+                });
+                if (match) {
+                    matchedUserId = match[0];
+                    matchedUserNama = (match[1] as any).nama;
+                }
+            }
+
+            if (!matchedUserId) {
+                throw new Error(`Karyawan dengan nama "${extracted.nama}" tidak terdaftar di database. Silakan tambahkan karyawan tersebut terlebih dahulu.`);
+            }
+
+            if (extracted.type === 'leave') {
+                const payload = {
+                    user_id: matchedUserId,
+                    tipe: extracted.tipe || 'izin',
+                    tanggal_mulai: extracted.tanggal_mulai || new Date().toISOString().split('T')[0],
+                    tanggal_akhir: extracted.tanggal_akhir || extracted.tanggal_mulai || new Date().toISOString().split('T')[0],
+                    alasan: extracted.alasan || 'Pengajuan via AI Dokumen',
+                    status: 'approved',
+                    catatan_admin: 'Disetujui otomatis oleh AI (Dokumen diunggah Admin)',
+                    created_at: new Date().toISOString()
+                };
+
+                await addDoc(collection(db, 'leave_requests'), payload);
+                toast.success(`AI Berhasil! Menambahkan pengajuan ${payload.tipe} untuk ${matchedUserNama} (Disetujui otomatis).`, { id: toastId });
+            } else {
+                const payload = {
+                    user_id: matchedUserId,
+                    tanggal: extracted.tanggal || new Date().toISOString().split('T')[0],
+                    durasi_jam: Number(extracted.durasi_jam || 2),
+                    keterangan: extracted.keterangan || 'Overtime via AI Dokumen',
+                    status: 'approved',
+                    catatan_admin: 'Disetujui otomatis oleh AI (Dokumen diunggah Admin)',
+                    created_at: new Date().toISOString()
+                };
+
+                await addDoc(collection(db, 'overtime'), payload);
+                toast.success(`AI Berhasil! Menambahkan pengajuan Lembur untuk ${matchedUserNama} (Disetujui otomatis).`, { id: toastId });
+            }
+
+        } catch (error: any) {
+            console.error("Gagal melakukan ekstraksi dokumen via AI:", error);
+            toast.error(error.message || 'Gagal memproses dokumen menggunakan AI', { id: toastId });
+        } finally {
+            setIsExtracting(false);
+            e.target.value = '';
+        }
+    };
     
     // Filters
     const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -257,34 +357,51 @@ export default function ApprovalTab() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
                 <div>
                     <h3 className="text-xl font-bold text-slate-800">Persetujuan & Pengajuan</h3>
                     <p className="text-sm text-slate-500 mt-1">Kelola permohonan izin, cuti, sakit, dan lembur dari seluruh karyawan.</p>
                 </div>
-                <div className="flex bg-slate-200 p-1 rounded-xl w-full sm:w-auto">
-                    <button 
-                        onClick={() => { setActiveTab('leave'); setFilterType('all'); }} 
-                        className={`flex-1 sm:flex-none px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 ${activeTab === 'leave' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-600 hover:text-slate-800'}`}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <label 
+                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-sm hover:shadow transition-all text-xs cursor-pointer justify-center"
+                        title="Unggah surat izin dokter, surat cuti, atau slip lembur untuk ditambahkan otomatis oleh AI"
                     >
-                        <span>Izin / Sakit / Cuti</span>
-                        {leaveRequests.filter(item => item.status === 'pending').length > 0 && (
-                            <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-bounce">
-                                {leaveRequests.filter(item => item.status === 'pending').length}
-                            </span>
-                        )}
-                    </button>
-                    <button 
-                        onClick={() => { setActiveTab('overtime'); setFilterType('all'); }} 
-                        className={`flex-1 sm:flex-none px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 ${activeTab === 'overtime' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-600 hover:text-slate-800'}`}
-                    >
-                        <span>Lembur</span>
-                        {overtimeRequests.filter(item => item.status === 'pending').length > 0 && (
-                            <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-bounce">
-                                {overtimeRequests.filter(item => item.status === 'pending').length}
-                            </span>
-                        )}
-                    </button>
+                        <Sparkles size={14} className={isExtracting ? "animate-spin" : ""} />
+                        <span>{isExtracting ? "Memproses AI..." : "Impor Izin/Lembur (AI)"}</span>
+                        <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={handleAIApprovalUpload} 
+                            disabled={isExtracting}
+                            className="hidden" 
+                        />
+                    </label>
+
+                    <div className="flex bg-slate-200 p-1 rounded-xl">
+                        <button 
+                            onClick={() => { setActiveTab('leave'); setFilterType('all'); }} 
+                            className={`flex-1 sm:flex-none px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 ${activeTab === 'leave' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-600 hover:text-slate-800'}`}
+                        >
+                            <span>Izin / Sakit / Cuti</span>
+                            {leaveRequests.filter(item => item.status === 'pending').length > 0 && (
+                                <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-bounce">
+                                    {leaveRequests.filter(item => item.status === 'pending').length}
+                                </span>
+                            )}
+                        </button>
+                        <button 
+                            onClick={() => { setActiveTab('overtime'); setFilterType('all'); }} 
+                            className={`flex-1 sm:flex-none px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 ${activeTab === 'overtime' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-600 hover:text-slate-800'}`}
+                        >
+                            <span>Lembur</span>
+                            {overtimeRequests.filter(item => item.status === 'pending').length > 0 && (
+                                <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full animate-bounce">
+                                    {overtimeRequests.filter(item => item.status === 'pending').length}
+                                </span>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter, Printer, Download } from 'lucide-react';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter, Printer, Download, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -14,6 +14,7 @@ export default function AbsensiTab() {
     const [filterDivisi, setFilterDivisi] = useState('');
     const [usersMap, setUsersMap] = useState<Record<string, any>>({});
     const [divisiList, setDivisiList] = useState<string[]>([]);
+    const [isExtracting, setIsExtracting] = useState(false);
     
     // Additional filters for interactive UX
     const [searchQuery, setSearchQuery] = useState('');
@@ -24,6 +25,71 @@ export default function AbsensiTab() {
     
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [viewPhoto, setViewPhoto] = useState<string | null>(null);
+
+    const handleAIAttendanceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsExtracting(true);
+        const toastId = toast.loading('AI sedang memindai foto & memproses log kehadiran...');
+
+        try {
+            const base64Image = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = (error) => reject(error);
+                reader.readAsDataURL(file);
+            });
+
+            const response = await fetch('/api/extract-attendance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64Image, currentDate: filterDate })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Gagal berkomunikasi dengan AI');
+            }
+
+            const data = await response.json();
+            if (!data.success || !data.records || data.records.length === 0) {
+                throw new Error('AI tidak menemukan data absensi dalam gambar tersebut. Pastikan teks terlihat jelas.');
+            }
+
+            let importCount = 0;
+            for (const record of data.records) {
+                const waNumber = record.waNumber ? record.waNumber.replace(/\D/g, '') : '';
+                if (!waNumber) continue;
+
+                const userId = `wa-${waNumber}`;
+                const attId = `${userId}-${record.tanggal}`;
+                const payload: any = {
+                    user_id: userId,
+                    tanggal: record.tanggal,
+                    jam_masuk: record.jam_masuk,
+                    status: record.status,
+                    method_masuk: 'Foto AI',
+                    created_at: new Date().toISOString()
+                };
+                if (record.jam_pulang) {
+                    payload.jam_pulang = record.jam_pulang;
+                    payload.method_pulang = 'Foto AI';
+                }
+
+                await setDoc(doc(db, 'attendance', attId), payload, { merge: true });
+                importCount++;
+            }
+
+            toast.success(`AI Berhasil! Mengimpor ${importCount} catatan absensi dari foto ke tanggal ${filterDate}.`, { id: toastId });
+        } catch (error: any) {
+            console.error("Gagal melakukan ekstraksi data via AI:", error);
+            toast.error(error.message || 'Gagal memproses gambar menggunakan AI', { id: toastId });
+        } finally {
+            setIsExtracting(false);
+            e.target.value = '';
+        }
+    };
 
     useEffect(() => {
         const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
@@ -199,6 +265,20 @@ export default function AbsensiTab() {
                 
                 {/* Admin Export Actions */}
                 <div className="flex flex-wrap gap-2">
+                    <label 
+                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-sm hover:shadow transition-all text-xs cursor-pointer"
+                        title="Unggah foto lembar presensi, logbook, atau tabel kehadiran untuk diimpor otomatis oleh AI"
+                    >
+                        <Sparkles size={14} className={isExtracting ? "animate-spin" : ""} />
+                        <span>{isExtracting ? "Memproses AI..." : "Impor Absen (AI)"}</span>
+                        <input 
+                            type="file" 
+                            accept="image/*" 
+                            onChange={handleAIAttendanceUpload} 
+                            disabled={isExtracting}
+                            className="hidden" 
+                        />
+                    </label>
                     <button
                         onClick={handlePrintDaily}
                         disabled={displayedAttendance.length === 0}
