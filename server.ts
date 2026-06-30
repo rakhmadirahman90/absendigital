@@ -53,23 +53,35 @@ app.post("/api/verify-selfie", async (req, res) => {
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Data
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: base64Data
+            }
+          },
+          {
+            text: "Tugas Anda adalah memverifikasi foto selfie karyawan untuk sistem kehadiran (absensi) online secara akurat.\n\n" +
+                  "Kriteria Evaluasi:\n" +
+                  "1. APAKAH INI WAJAH MANUSIA ASLI?\n" +
+                  "   - Harus terdapat setidaknya satu wajah manusia asli yang terlihat jelas di foto.\n" +
+                  "   - Foto harus menunjukkan wajah orang nyata (real human face) yang sedang menghadap ke arah kamera.\n" +
+                  "   - JIKA terdapat wajah manusia asli yang tampak wajar, Anda WAJIB menetapkan is_valid: true.\n" +
+                  "   - PENTING: Jangan terlalu kaku atau ketat. Selama ada wajah manusia nyata di dalam foto, meskipun ekspresi datar atau latar belakangnya biasa saja/sederhana, foto tersebut harus dianggap VALID (is_valid: true). Jangan pernah menolak wajah asli dengan alasan 'statis' atau 'tidak aktif' (karena ini adalah foto satu bingkai/still image, maka wajar jika diam).\n\n" +
+                  "2. APAKAH INI BUKAN WAJAH MANUSIA ATAU UPAYA MANIPULASI?\n" +
+                  "   - Anda WAJIB menetapkan is_valid: false jika gambar berupa:\n" +
+                  "     * Layar hitam kosong, kegelapan total, atau buram parah sehingga tidak terlihat wajah manusia.\n" +
+                  "     * Benda mati, mainan, hewan peliharaan, kartun, ilustrasi, lukisan, atau pemandangan kosong.\n" +
+                  "     * Hanya berupa teks, dokumen, atau kertas putih kosong.\n" +
+                  "     * Upaya manipulasi/spoofing yang sangat jelas seperti memfoto lembaran cetakan kertas foto atau memfoto layar HP/laptop lain yang menampilkan foto orang lain (jika terlihat jelas batas-batas frame layar atau kertas cetak).\n\n" +
+                  "Berikan jawaban dalam format JSON terstruktur dengan properti berikut:\n" +
+                  "- is_valid: boolean (true jika ada wajah manusia asli yang nyata dan jelas, false jika tidak ada wajah atau terdeteksi manipulasi/bukan manusia asli)\n" +
+                  "- confidence: angka desimal dari 0.0 sampai 1.0 (tingkat keyakinan Anda)\n" +
+                  "- reason: string penjelasan singkat dalam Bahasa Indonesia yang menjelaskan mengapa foto tersebut dinyatakan valid (contoh: 'Wajah manusia asli terdeteksi dengan jelas, siap untuk absen.') atau tidak valid (contoh: 'Wajah tidak terdeteksi atau gambar terlalu gelap.')"
           }
-        },
-        "Analisis foto selfie karyawan ini untuk absensi online secara ketat. Periksa secara detail:\n" +
-        "1. Apakah ada wajah manusia yang jelas dan aktif di dalam foto?\n" +
-        "2. Apakah foto ini merupakan foto selfie asli manusia yang aktif (bukan gambar hitam kosong, bukan gambar kartun, bukan benda mati, bukan foto dari cetakan kertas/printer, bukan foto layar komputer/HP, dan bukan foto wajah yang terpotong/buram total)?\n" +
-        "3. Wajah harus menghadap kamera secara wajar dan dapat dikenali.\n\n" +
-        "Ketentuan penting: Jika foto berupa layar HP/komputer yang menampilkan foto orang lain, atau cetakan kertas, Anda WAJIB menandai is_valid sebagai false.\n\n" +
-        "Berikan jawaban dalam format JSON terstruktur dengan properti berikut:\n" +
-        "- is_valid: boolean (true jika ada wajah manusia asli yang aktif dan jelas, false jika tidak valid atau terdeteksi manipulasi/bukan manusia aktif)\n" +
-        "- confidence: angka desimal dari 0.0 sampai 1.0 (tingkat keyakinan Anda)\n" +
-        "- reason: string penjelasan singkat dalam Bahasa Indonesia yang menjelaskan mengapa foto tersebut valid atau tidak valid"
-      ],
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -146,24 +158,28 @@ app.post("/api/extract-employees", async (req, res) => {
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Data
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: mimeType,
+              data: base64Data
+            }
+          },
+          {
+            text: "Analisis gambar tabel/dokumen daftar karyawan ini. Ekstrak data semua karyawan yang tertera pada gambar secara akurat.\n" +
+                  "Ketentuan pengisian properti:\n" +
+                  "- waNumber: nomor telepon/whatsapp (harus berupa string angka saja, bersihkan dari spasi/strip/tanda plus, contoh: 0812345678). Jika di gambar tidak ada nomor WhatsApp/telepon sama sekali, mohon buatkan nomor dummy berurutan unik mulai dari '0816200001', '0816200002', dst.\n" +
+                  "- nama: nama lengkap karyawan (gunakan huruf kapital)\n" +
+                  "- divisi: divisi kerja (jika tidak tertera di gambar, buat default '162')\n" +
+                  "- jabatan: jabatan kerja (jika tidak tertera di gambar, buat default 'OPERATOR')\n" +
+                  "- password: kata sandi default untuk akun mereka (isi string '123456')\n" +
+                  "- role: harus string 'karyawan' atau 'admin' (default: 'karyawan')\n" +
+                  "- assignedOfficeId: lokasi kantor yang ditentukan (default: 'all')\n\n" +
+                  "Berikan jawaban dalam format JSON terstruktur yang berisi array karyawan."
           }
-        },
-        "Analisis gambar tabel/dokumen daftar karyawan ini. Ekstrak data semua karyawan yang tertera pada gambar secara akurat.\n" +
-        "Ketentuan pengisian properti:\n" +
-        "- waNumber: nomor telepon/whatsapp (harus berupa string angka saja, bersihkan dari spasi/strip/tanda plus, contoh: 0812345678). Jika di gambar tidak ada nomor WhatsApp/telepon sama sekali, mohon buatkan nomor dummy berurutan unik mulai dari '0816200001', '0816200002', dst.\n" +
-        "- nama: nama lengkap karyawan (gunakan huruf kapital)\n" +
-        "- divisi: divisi kerja (jika tidak tertera di gambar, buat default '162')\n" +
-        "- jabatan: jabatan kerja (jika tidak tertera di gambar, buat default 'OPERATOR')\n" +
-        "- password: kata sandi default untuk akun mereka (isi string '123456')\n" +
-        "- role: harus string 'karyawan' atau 'admin' (default: 'karyawan')\n" +
-        "- assignedOfficeId: lokasi kantor yang ditentukan (default: 'all')\n\n" +
-        "Berikan jawaban dalam format JSON terstruktur yang berisi array karyawan."
-      ],
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -238,19 +254,23 @@ app.post("/api/extract-attendance", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: [
-        { inlineData: { mimeType, data: base64Data } },
-        `Analisis foto daftar presensi atau logbook kehadiran karyawan berikut. Ekstrak data absensi harian secara akurat.\n` +
-        `Gunakan tanggal acuan default ini: ${currentDate || new Date().toISOString().split('T')[0]}.\n` +
-        `Ketentuan properti:\n` +
-        `- waNumber: nomor WA/telepon karyawan (hanya angka saja, contoh: 0816200001)\n` +
-        `- nama: nama karyawan (untuk verifikasi / pencocokan visual)\n` +
-        `- tanggal: format 'YYYY-MM-DD' (default: acuan di atas, kecuali tertera tanggal lain di gambar)\n` +
-        `- jam_masuk: format 'HH:mm' (contoh: 07:30)\n` +
-        `- jam_pulang: format 'HH:mm' jika tertera, jika tidak kosongkan saja\n` +
-        `- status: harus 'Hadir' atau 'Terlambat' (gunakan logika: jika jam_masuk lewat dari 08:00 maka 'Terlambat', sebaliknya 'Hadir')\n\n` +
-        `Berikan jawaban dalam format JSON terstruktur.`
-      ],
+      contents: {
+        parts: [
+          { inlineData: { mimeType, data: base64Data } },
+          {
+            text: `Analisis foto daftar presensi atau logbook kehadiran karyawan berikut. Ekstrak data absensi harian secara akurat.\n` +
+                  `Gunakan tanggal acuan default ini: ${currentDate || new Date().toISOString().split('T')[0]}.\n` +
+                  `Ketentuan properti:\n` +
+                  `- waNumber: nomor WA/telepon karyawan (hanya angka saja, contoh: 0816200001)\n` +
+                  `- nama: nama karyawan (untuk verifikasi / pencocokan visual)\n` +
+                  `- tanggal: format 'YYYY-MM-DD' (default: acuan di atas, kecuali tertera tanggal lain di gambar)\n` +
+                  `- jam_masuk: format 'HH:mm' (contoh: 07:30)\n` +
+                  `- jam_pulang: format 'HH:mm' jika tertera, jika tidak kosongkan saja\n` +
+                  `- status: harus 'Hadir' atau 'Terlambat' (gunakan logika: jika jam_masuk lewat dari 08:00 maka 'Terlambat', sebaliknya 'Hadir')\n\n` +
+                  `Berikan jawaban dalam format JSON terstruktur.`
+          }
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -312,26 +332,30 @@ app.post("/api/extract-approval", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: [
-        { inlineData: { mimeType, data: base64Data } },
-        `Analisis dokumen berikut (bisa berupa Surat Izin Cuti, Surat Keterangan Dokter, Form Pengajuan Lembur, dll).\n` +
-        `Ekstrak informasi pengajuan tersebut untuk diinput ke database.\n\n` +
-        `Tentukan tipenya terlebih dahulu:\n` +
-        `- Jika izin/sakit/cuti, gunakan type 'leave'\n` +
-        `- Jika lembur, gunakan type 'overtime'\n\n` +
-        `Isi properti berikut:\n` +
-        `- type: 'leave' atau 'overtime'\n` +
-        `- waNumber: nomor WhatsApp karyawan jika tertera, jika tidak ada, kosongkan\n` +
-        `- nama: nama lengkap karyawan (gunakan huruf kapital)\n` +
-        `- tipe: jika leave, pilih salah satu dari: 'izin', 'sakit', 'cuti' (default: 'izin')\n` +
-        `- tanggal_mulai: format 'YYYY-MM-DD' (untuk leave)\n` +
-        `- tanggal_akhir: format 'YYYY-MM-DD' (untuk leave)\n` +
-        `- alasan: deskripsi alasan pengajuan izin/sakit/cuti secara ringkas\n` +
-        `- tanggal: format 'YYYY-MM-DD' (untuk overtime)\n` +
-        `- durasi_jam: angka jumlah jam lembur (untuk overtime, default: 2)\n` +
-        `- keterangan: deskripsi aktivitas/keterangan lembur\n\n` +
-        `Berikan respons JSON terstruktur.`
-      ],
+      contents: {
+        parts: [
+          { inlineData: { mimeType, data: base64Data } },
+          {
+            text: `Analisis dokumen berikut (bisa berupa Surat Izin Cuti, Surat Keterangan Dokter, Form Pengajuan Lembur, dll).\n` +
+                  `Ekstrak informasi pengajuan tersebut untuk diinput ke database.\n\n` +
+                  `Tentukan tipenya terlebih dahulu:\n` +
+                  `- Jika izin/sakit/cuti, gunakan type 'leave'\n` +
+                  `- Jika lembur, gunakan type 'overtime'\n\n` +
+                  `Isi properti berikut:\n` +
+                  `- type: 'leave' atau 'overtime'\n` +
+                  `- waNumber: nomor WhatsApp karyawan jika tertera, jika tidak ada, kosongkan\n` +
+                  `- nama: nama lengkap karyawan (gunakan huruf kapital)\n` +
+                  `- tipe: jika leave, pilih salah satu dari: 'izin', 'sakit', 'cuti' (default: 'izin')\n` +
+                  `- tanggal_mulai: format 'YYYY-MM-DD' (untuk leave)\n` +
+                  `- tanggal_akhir: format 'YYYY-MM-DD' (untuk leave)\n` +
+                  `- alasan: deskripsi alasan pengajuan izin/sakit/cuti secara ringkas\n` +
+                  `- tanggal: format 'YYYY-MM-DD' (untuk overtime)\n` +
+                  `- durasi_jam: angka jumlah jam lembur (untuk overtime, default: 2)\n` +
+                  `- keterangan: deskripsi aktivitas/keterangan lembur\n\n` +
+                  `Berikan respons JSON terstruktur.`
+          }
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -388,17 +412,21 @@ app.post("/api/extract-office", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: [
-        { inlineData: { mimeType, data: base64Data } },
-        `Analisis gambar tangkapan layar (screenshot) Google Maps, koordinat GPS, atau dokumen berisi alamat kantor cabang.\n` +
-        `Temukan koordinat geografis (Latitude & Longitude) serta nama lokasi kantor.\n\n` +
-        `Ekstrak properti berikut:\n` +
-        `- name: Nama lokasi kantor cabang (contoh: Kantor Bandung Barat)\n` +
-        `- latitude: angka desimal koordinat lintang (contoh: -6.917464)\n` +
-        `- longitude: angka desimal koordinat bujur (contoh: 107.619122)\n` +
-        `- radius: angka integer batas radius presensi dalam meter (default: 100)\n\n` +
-        `Berikan respons JSON terstruktur.`
-      ],
+      contents: {
+        parts: [
+          { inlineData: { mimeType, data: base64Data } },
+          {
+            text: `Analisis gambar tangkapan layar (screenshot) Google Maps, koordinat GPS, atau dokumen berisi alamat kantor cabang.\n` +
+                  `Temukan koordinat geografis (Latitude & Longitude) serta nama lokasi kantor.\n\n` +
+                  `Ekstrak properti berikut:\n` +
+                  `- name: Nama lokasi kantor cabang (contoh: Kantor Bandung Barat)\n` +
+                  `- latitude: angka desimal koordinat lintang (contoh: -6.917464)\n` +
+                  `- longitude: angka desimal koordinat bujur (contoh: 107.619122)\n` +
+                  `- radius: angka integer batas radius presensi dalam meter (default: 100)\n\n` +
+                  `Berikan respons JSON terstruktur.`
+          }
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -455,19 +483,17 @@ app.post("/api/generate-ai-report", async (req, res) => {
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: [
-        "Anda adalah asisten admin pintar yang ahli dalam manajemen sumber daya manusia (SDM) dan analisis data kehadiran.\n" +
-        "Tugas Anda adalah memproses data kehadiran karyawan untuk menghasilkan laporan yang rapi, profesional, siap cetak, dan kaya akan analisis AI.\n\n" +
-        `Jenis Laporan: ${reportType === "monthly" ? "Bulanan" : "Mingguan"}\n` +
-        `Rentang Tanggal: ${startDate} sampai ${endDate}\n\n` +
-        "Berikut adalah data mentah kehadiran karyawan:\n" +
-        JSON.stringify(simplifiedRecords, null, 2) + "\n\n" +
-        "Silakan buat:\n" +
-        "1. htmlReport: Sebuah dokumen HTML mandiri (tanpa tag <html> atau <body> luar, cukup sebuah div container utama yang bisa dirender dalam elemen React) yang diformat dengan CSS inline atau Tailwind CSS (gunakan kelas Tailwind standar). Harus memiliki header instansi/perusahaan, ringkasan statistik (tingkat kehadiran, total hadir, terlambat, tidak hadir), tabel kehadiran yang sangat rapi (bergaris, dengan zebra striping, warna status yang jelas, misal hijau untuk Hadir, merah/kuning untuk Terlambat), serta bagian khusus analisis AI (Analisis AI & Rekomendasi Kehadiran) dalam bahasa Indonesia yang berwibawa dan penuh insight (seperti melacak departemen paling rajin, karyawan paling tepat waktu, tren keterlambatan, dan solusi taktis untuk manajemen).\n" +
-        "2. csvReport: String data CSV standar yang dipisahkan koma, berisi kolom: 'No, Nama Karyawan, Divisi, Jabatan, Tanggal, Jam Masuk, Jam Pulang, Status'. Pastikan semua nama berkarakter khusus dibungkus dengan tanda kutip ganda agar ramah Microsoft Excel.\n" +
-        "3. summary: JSON berisi totalOnTime (number), totalLate (number), complianceRate (string persentase, contoh: '92.5%'), dan summaryComments (penjelasan singkat 1-2 kalimat tentang kondisi kehadiran secara keseluruhan).\n\n" +
-        "Berikan respons dalam format JSON yang valid."
-      ],
+      contents: "Anda adalah asisten admin pintar yang ahli dalam manajemen sumber daya manusia (SDM) dan analisis data kehadiran.\n" +
+                "Tugas Anda adalah memproses data kehadiran karyawan untuk menghasilkan laporan yang rapi, profesional, siap cetak, dan kaya akan analisis AI.\n\n" +
+                `Jenis Laporan: ${reportType === "monthly" ? "Bulanan" : "Mingguan"}\n` +
+                `Rentang Tanggal: ${startDate} sampai ${endDate}\n\n` +
+                "Berikut adalah data mentah kehadiran karyawan:\n" +
+                JSON.stringify(simplifiedRecords, null, 2) + "\n\n" +
+                "Silakan buat:\n" +
+                "1. htmlReport: Sebuah dokumen HTML mandiri (tanpa tag <html> atau <body> luar, cukup sebuah div container utama yang bisa dirender dalam elemen React) yang diformat dengan CSS inline atau Tailwind CSS (gunakan kelas Tailwind standar). Harus memiliki header instansi/perusahaan, ringkasan statistik (tingkat kehadiran, total hadir, terlambat, tidak hadir), tabel kehadiran yang sangat rapi (bergaris, dengan zebra striping, warna status yang jelas, misal hijau untuk Hadir, merah/kuning untuk Terlambat), serta bagian khusus analisis AI (Analisis AI & Rekomendasi Kehadiran) dalam bahasa Indonesia yang berwibawa dan penuh insight (seperti melacak departemen paling rajin, karyawan paling tepat waktu, tren keterlambatan, dan solusi taktis untuk manajemen).\n" +
+                "2. csvReport: String data CSV standar yang dipisahkan koma, berisi kolom: 'No, Nama Karyawan, Divisi, Jabatan, Tanggal, Jam Masuk, Jam Pulang, Status'. Pastikan semua nama berkarakter khusus dibungkus dengan tanda kutip ganda agar ramah Microsoft Excel.\n" +
+                "3. summary: JSON berisi totalOnTime (number), totalLate (number), complianceRate (string persentase, contoh: '92.5%'), dan summaryComments (penjelasan singkat 1-2 kalimat tentang kondisi kehadiran secara keseluruhan).\n\n" +
+                "Berikan respons dalam format JSON yang valid.",
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -547,24 +573,22 @@ app.post("/api/analyze-suspicious-request", async (req, res) => {
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: [
-        "Anda adalah analis SDM (HR Analyst) pintar dan penyelidik integritas kehadiran karyawan.\n" +
-        "Tugas Anda adalah menganalisis apakah pengajuan izin/sakit/cuti (leave request) tertentu di bawah ini mencurigakan (suspicious) atau wajar (normal) berdasarkan profil karyawan, riwayat pengajuan izin mereka sebelumnya, dan pola lokasi kehadiran mereka (berdasarkan data GPS/alamat check-in absensi).\n\n" +
-        "Berikut rincian pengajuan yang sedang diperiksa:\n" +
-        `- Nama Karyawan: ${employeeName}\n` +
-        `- Tipe Pengajuan: ${leaveRequest.tipe} (Mulai: ${leaveRequest.tanggal_mulai} s/d ${leaveRequest.tanggal_akhir})\n` +
-        `- Alasan Pengajuan: "${leaveRequest.alasan}"\n\n` +
-        "Berikut data Riwayat Pengajuan Izin sebelumnya untuk karyawan ini:\n" +
-        JSON.stringify(cleanedHistory, null, 2) + "\n\n" +
-        "Berikut data Riwayat Lokasi & Kehadiran (Attendance) terbaru dari karyawan ini:\n" +
-        JSON.stringify(cleanedAttendance, null, 2) + "\n\n" +
-        "Silakan lakukan analisis mendalam:\n" +
-        "1. Pola Hari Kejadian: Apakah ada kecenderungan mengajukan izin pada hari Jumat/Senin (pola memperpanjang akhir pekan / long weekend)?\n" +
-        "2. Pola Frekuensi: Apakah frekuensi izin/sakit sangat tinggi atau tidak wajar?\n" +
-        "3. Pola Lokasi Absen Terakhir: Apakah lokasi check-in absensi masuk/pulang terakhir (alamat_masuk/koordinat) berada di luar kota, tempat wisata, atau sangat jauh dari koordinat kantor biasa, padahal mengajukan izin sakit atau kedinasan lokal? Apakah terdeteksi ketidakcocokan lokasi yang signifikan?\n" +
-        "4. Konsistensi Alasan: Apakah alasan yang diberikan terdengar klise atau berulang secara mencurigakan?\n\n" +
-        "Berikan respons dalam format JSON yang valid."
-      ],
+      contents: "Anda adalah analis SDM (HR Analyst) pintar dan penyelidik integritas kehadiran karyawan.\n" +
+                "Tugas Anda adalah menganalisis apakah pengajuan izin/sakit/cuti (leave request) tertentu di bawah ini mencurigakan (suspicious) atau wajar (normal) berdasarkan profil karyawan, riwayat pengajuan izin mereka sebelumnya, dan pola lokasi kehadiran mereka (berdasarkan data GPS/alamat check-in absensi).\n\n" +
+                "Berikut rincian pengajuan yang sedang diperiksa:\n" +
+                `- Nama Karyawan: ${employeeName}\n` +
+                `- Tipe Pengajuan: ${leaveRequest.tipe} (Mulai: ${leaveRequest.tanggal_mulai} s/d ${leaveRequest.tanggal_akhir})\n` +
+                `- Alasan Pengajuan: "${leaveRequest.alasan}"\n\n` +
+                "Berikut data Riwayat Pengajuan Izin sebelumnya untuk karyawan ini:\n" +
+                JSON.stringify(cleanedHistory, null, 2) + "\n\n" +
+                "Berikut data Riwayat Lokasi & Kehadiran (Attendance) terbaru dari karyawan ini:\n" +
+                JSON.stringify(cleanedAttendance, null, 2) + "\n\n" +
+                "Silakan lakukan analisis mendalam:\n" +
+                "1. Pola Hari Kejadian: Apakah ada kecenderungan mengajukan izin pada hari Jumat/Senin (pola memperpanjang akhir pekan / long weekend)?\n" +
+                "2. Pola Frekuensi: Apakah frekuensi izin/sakit sangat tinggi atau tidak wajar?\n" +
+                "3. Pola Lokasi Absen Terakhir: Apakah lokasi check-in absensi masuk/pulang terakhir (alamat_masuk/koordinat) berada di luar kota, tempat wisata, atau sangat jauh dari koordinat kantor biasa, padahal mengajukan izin sakit atau kedinasan lokal? Apakah terdeteksi ketidakcocokan lokasi yang signifikan?\n" +
+                "4. Konsistensi Alasan: Apakah alasan yang diberikan terdengar klise atau berulang secara mencurigakan?\n\n" +
+                "Berikan respons dalam format JSON yang valid.",
       config: {
         responseMimeType: "application/json",
         responseSchema: {
