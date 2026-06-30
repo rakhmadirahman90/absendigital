@@ -251,7 +251,14 @@ app.post("/api/extract-attendance", async (req, res) => {
       base64Data = parts[1];
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: {
@@ -329,7 +336,14 @@ app.post("/api/extract-approval", async (req, res) => {
       base64Data = parts[1];
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: {
@@ -409,7 +423,14 @@ app.post("/api/extract-office", async (req, res) => {
       base64Data = parts[1];
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: {
@@ -463,7 +484,14 @@ app.post("/api/generate-ai-report", async (req, res) => {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
     
     // Construct simplified datasets to send to Gemini to conserve tokens and prevent clutter
     const employeesInfo = Object.entries(users || {}).reduce((acc: any, [userId, u]: [string, any]) => {
@@ -483,17 +511,23 @@ app.post("/api/generate-ai-report", async (req, res) => {
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: "Anda adalah asisten admin pintar yang ahli dalam manajemen sumber daya manusia (SDM) dan analisis data kehadiran.\n" +
-                "Tugas Anda adalah memproses data kehadiran karyawan untuk menghasilkan laporan yang rapi, profesional, siap cetak, dan kaya akan analisis AI.\n\n" +
-                `Jenis Laporan: ${reportType === "monthly" ? "Bulanan" : "Mingguan"}\n` +
-                `Rentang Tanggal: ${startDate} sampai ${endDate}\n\n` +
-                "Berikut adalah data mentah kehadiran karyawan:\n" +
-                JSON.stringify(simplifiedRecords, null, 2) + "\n\n" +
-                "Silakan buat:\n" +
-                "1. htmlReport: Sebuah dokumen HTML mandiri (tanpa tag <html> atau <body> luar, cukup sebuah div container utama yang bisa dirender dalam elemen React) yang diformat dengan CSS inline atau Tailwind CSS (gunakan kelas Tailwind standar). Harus memiliki header instansi/perusahaan, ringkasan statistik (tingkat kehadiran, total hadir, terlambat, tidak hadir), tabel kehadiran yang sangat rapi (bergaris, dengan zebra striping, warna status yang jelas, misal hijau untuk Hadir, merah/kuning untuk Terlambat), serta bagian khusus analisis AI (Analisis AI & Rekomendasi Kehadiran) dalam bahasa Indonesia yang berwibawa dan penuh insight (seperti melacak departemen paling rajin, karyawan paling tepat waktu, tren keterlambatan, dan solusi taktis untuk manajemen).\n" +
-                "2. csvReport: String data CSV standar yang dipisahkan koma, berisi kolom: 'No, Nama Karyawan, Divisi, Jabatan, Tanggal, Jam Masuk, Jam Pulang, Status'. Pastikan semua nama berkarakter khusus dibungkus dengan tanda kutip ganda agar ramah Microsoft Excel.\n" +
-                "3. summary: JSON berisi totalOnTime (number), totalLate (number), complianceRate (string persentase, contoh: '92.5%'), dan summaryComments (penjelasan singkat 1-2 kalimat tentang kondisi kehadiran secara keseluruhan).\n\n" +
-                "Berikan respons dalam format JSON yang valid.",
+      contents: {
+        parts: [
+          {
+            text: "Anda adalah asisten admin pintar yang ahli dalam manajemen sumber daya manusia (SDM) dan analisis data kehadiran.\n" +
+                  "Tugas Anda adalah memproses data kehadiran karyawan untuk menghasilkan laporan yang rapi, profesional, siap cetak, dan kaya akan analisis AI.\n\n" +
+                  `Jenis Laporan: ${reportType === "monthly" ? "Bulanan" : "Mingguan"}\n` +
+                  `Rentang Tanggal: ${startDate} sampai ${endDate}\n\n` +
+                  "Berikut adalah data mentah kehadiran karyawan:\n" +
+                  JSON.stringify(simplifiedRecords, null, 2) + "\n\n" +
+                  "Silakan buat:\n" +
+                  "1. htmlReport: Sebuah dokumen HTML mandiri (tanpa tag <html> atau <body> luar, cukup sebuah div container utama yang bisa dirender dalam elemen React) yang diformat dengan CSS inline atau Tailwind CSS (gunakan kelas Tailwind standar). Harus memiliki header instansi/perusahaan, ringkasan statistik (tingkat kehadiran, total hadir, terlambat, tidak hadir), tabel kehadiran yang sangat rapi (bergaris, dengan zebra striping, warna status yang jelas, misal hijau untuk Hadir, merah/kuning untuk Terlambat), serta bagian khusus analisis AI (Analisis AI & Rekomendasi Kehadiran) dalam bahasa Indonesia yang berwibawa dan penuh insight (seperti melacak departemen paling rajin, karyawan paling tepat waktu, tren keterlambatan, dan solusi taktis untuk manajemen).\n" +
+                  "2. csvReport: String data CSV standar yang dipisahkan koma, berisi kolom: 'No, Nama Karyawan, Divisi, Jabatan, Tanggal, Jam Masuk, Jam Pulang, Status'. Pastikan semua nama berkarakter khusus dibungkus dengan tanda kutip ganda agar ramah Microsoft Excel.\n" +
+                  "3. summary: JSON berisi totalOnTime (number), totalLate (number), complianceRate (string persentase, contoh: '92.5%'), dan summaryComments (penjelasan singkat 1-2 kalimat tentang kondisi kehadiran secara keseluruhan).\n\n" +
+                  "Berikan respons dalam format JSON yang valid."
+          }
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -551,7 +585,14 @@ app.post("/api/analyze-suspicious-request", async (req, res) => {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
 
     // Format inputs for Gemini to stay concise and relevant
     const cleanedHistory = (employeeHistory || []).map((h: any) => ({
@@ -573,22 +614,28 @@ app.post("/api/analyze-suspicious-request", async (req, res) => {
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: "Anda adalah analis SDM (HR Analyst) pintar dan penyelidik integritas kehadiran karyawan.\n" +
-                "Tugas Anda adalah menganalisis apakah pengajuan izin/sakit/cuti (leave request) tertentu di bawah ini mencurigakan (suspicious) atau wajar (normal) berdasarkan profil karyawan, riwayat pengajuan izin mereka sebelumnya, dan pola lokasi kehadiran mereka (berdasarkan data GPS/alamat check-in absensi).\n\n" +
-                "Berikut rincian pengajuan yang sedang diperiksa:\n" +
-                `- Nama Karyawan: ${employeeName}\n` +
-                `- Tipe Pengajuan: ${leaveRequest.tipe} (Mulai: ${leaveRequest.tanggal_mulai} s/d ${leaveRequest.tanggal_akhir})\n` +
-                `- Alasan Pengajuan: "${leaveRequest.alasan}"\n\n` +
-                "Berikut data Riwayat Pengajuan Izin sebelumnya untuk karyawan ini:\n" +
-                JSON.stringify(cleanedHistory, null, 2) + "\n\n" +
-                "Berikut data Riwayat Lokasi & Kehadiran (Attendance) terbaru dari karyawan ini:\n" +
-                JSON.stringify(cleanedAttendance, null, 2) + "\n\n" +
-                "Silakan lakukan analisis mendalam:\n" +
-                "1. Pola Hari Kejadian: Apakah ada kecenderungan mengajukan izin pada hari Jumat/Senin (pola memperpanjang akhir pekan / long weekend)?\n" +
-                "2. Pola Frekuensi: Apakah frekuensi izin/sakit sangat tinggi atau tidak wajar?\n" +
-                "3. Pola Lokasi Absen Terakhir: Apakah lokasi check-in absensi masuk/pulang terakhir (alamat_masuk/koordinat) berada di luar kota, tempat wisata, atau sangat jauh dari koordinat kantor biasa, padahal mengajukan izin sakit atau kedinasan lokal? Apakah terdeteksi ketidakcocokan lokasi yang signifikan?\n" +
-                "4. Konsistensi Alasan: Apakah alasan yang diberikan terdengar klise atau berulang secara mencurigakan?\n\n" +
-                "Berikan respons dalam format JSON yang valid.",
+      contents: {
+        parts: [
+          {
+            text: "Anda adalah analis SDM (HR Analyst) pintar dan penyelidik integritas kehadiran karyawan.\n" +
+                  "Tugas Anda adalah menganalisis apakah pengajuan izin/sakit/cuti (leave request) tertentu di bawah ini mencurigakan (suspicious) atau wajar (normal) berdasarkan profil karyawan, riwayat pengajuan izin mereka sebelumnya, dan pola lokasi kehadiran mereka (berdasarkan data GPS/alamat check-in absensi).\n\n" +
+                  "Berikut rincian pengajuan yang sedang diperiksa:\n" +
+                  `- Nama Karyawan: ${employeeName}\n` +
+                  `- Tipe Pengajuan: ${leaveRequest.tipe} (Mulai: ${leaveRequest.tanggal_mulai} s/d ${leaveRequest.tanggal_akhir})\n` +
+                  `- Alasan Pengajuan: "${leaveRequest.alasan}"\n\n` +
+                  "Berikut data Riwayat Pengajuan Izin sebelumnya untuk karyawan ini:\n" +
+                  JSON.stringify(cleanedHistory, null, 2) + "\n\n" +
+                  "Berikut data Riwayat Lokasi & Kehadiran (Attendance) terbaru dari karyawan ini:\n" +
+                  JSON.stringify(cleanedAttendance, null, 2) + "\n\n" +
+                  "Silakan lakukan analisis mendalam:\n" +
+                  "1. Pola Hari Kejadian: Apakah ada kecenderungan mengajukan izin pada hari Jumat/Senin (pola memperpanjang akhir pekan / long weekend)?\n" +
+                  "2. Pola Frekuensi: Apakah frekuensi izin/sakit sangat tinggi atau tidak wajar?\n" +
+                  "3. Pola Lokasi Absen Terakhir: Apakah lokasi check-in absensi masuk/pulang terakhir (alamat_masuk/koordinat) berada di luar kota, tempat wisata, atau sangat jauh dari koordinat kantor biasa, padahal mengajukan izin sakit atau kedinasan lokal? Apakah terdeteksi ketidakcocokan lokasi yang signifikan?\n" +
+                  "4. Konsistensi Alasan: Apakah alasan yang diberikan terdengar klise atau berulang secara mencurigakan?\n\n" +
+                  "Berikan respons dalam format JSON yang valid."
+          }
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
