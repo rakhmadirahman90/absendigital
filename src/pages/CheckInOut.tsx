@@ -391,20 +391,20 @@ export default function CheckInOut() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: rawImageSrc }),
         });
-        if (verifyResponse.ok) {
-          const verifyData = await verifyResponse.json();
-          if (verifyData.success) {
-            if (!verifyData.is_valid) {
-              throw new Error(`Verifikasi AI Gagal: ${verifyData.reason || 'Wajah manusia tidak terdeteksi secara akurat'}`);
-            }
-            toast.success(`AI Face OK: ${verifyData.reason}`);
-          }
+        
+        if (!verifyResponse.ok) {
+          const errData = await verifyResponse.json().catch(() => ({}));
+          throw new Error(`Gagal menghubungi server verifikasi wajah: ${errData.error || errData.reason || 'Sistem penolakan aktif.'}`);
         }
+        
+        const verifyData = await verifyResponse.json();
+        if (!verifyData.success || !verifyData.is_valid) {
+          throw new Error(`Verifikasi Wajah Gagal: ${verifyData.reason || 'Wajah manusia tidak terdeteksi secara aktif.'}`);
+        }
+        
+        toast.success(`Verifikasi Wajah Berhasil: ${verifyData.reason}`);
       } catch (aiErr: any) {
-        if (aiErr.message?.startsWith('Verifikasi AI Gagal')) {
-          throw aiErr;
-        }
-        console.warn('AI verification bypassed or failed to fetch:', aiErr);
+        throw new Error(aiErr.message || 'Verifikasi wajah gagal atau ditolak oleh sistem.');
       }
 
       setMessage('Memproses foto & menempelkan watermark...');

@@ -23,12 +23,12 @@ app.post("/api/verify-selfie", async (req, res) => {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    console.warn("GEMINI_API_KEY is not set or using placeholder. Bypassing selfie verification.");
-    return res.json({
-      success: true,
-      is_valid: true,
-      confidence: 1.0,
-      reason: "Verifikasi wajah berhasil (Mode Sandbox: Lewati verifikasi AI)"
+    console.warn("GEMINI_API_KEY is not set or using placeholder.");
+    return res.status(400).json({
+      success: false,
+      is_valid: false,
+      error: "Kunci API Gemini belum dikonfigurasi di server. Silakan atur GEMINI_API_KEY di panel pengaturan AI Studio.",
+      reason: "Verifikasi wajah ditolak karena konfigurasi API key tidak lengkap di sistem."
     });
   }
 
@@ -60,13 +60,15 @@ app.post("/api/verify-selfie", async (req, res) => {
             data: base64Data
           }
         },
-        "Analisis foto selfie karyawan ini untuk absensi online. Periksa secara detail:\n" +
-        "1. Apakah ada wajah manusia yang jelas di dalam foto?\n" +
-        "2. Apakah foto ini merupakan foto selfie asli manusia (bukan gambar hitam kosong, bukan gambar kartun, bukan benda mati, bukan foto layar komputer/HP, dan bukan foto wajah terpotong/buram total)?\n\n" +
+        "Analisis foto selfie karyawan ini untuk absensi online secara ketat. Periksa secara detail:\n" +
+        "1. Apakah ada wajah manusia yang jelas dan aktif di dalam foto?\n" +
+        "2. Apakah foto ini merupakan foto selfie asli manusia yang aktif (bukan gambar hitam kosong, bukan gambar kartun, bukan benda mati, bukan foto dari cetakan kertas/printer, bukan foto layar komputer/HP, dan bukan foto wajah yang terpotong/buram total)?\n" +
+        "3. Wajah harus menghadap kamera secara wajar dan dapat dikenali.\n\n" +
+        "Ketentuan penting: Jika foto berupa layar HP/komputer yang menampilkan foto orang lain, atau cetakan kertas, Anda WAJIB menandai is_valid sebagai false.\n\n" +
         "Berikan jawaban dalam format JSON terstruktur dengan properti berikut:\n" +
-        "- is_valid: boolean (true jika ada wajah manusia asli yang jelas, false jika tidak valid)\n" +
+        "- is_valid: boolean (true jika ada wajah manusia asli yang aktif dan jelas, false jika tidak valid atau terdeteksi manipulasi/bukan manusia aktif)\n" +
         "- confidence: angka desimal dari 0.0 sampai 1.0 (tingkat keyakinan Anda)\n" +
-        "- reason: string penjelasan singkat dalam Bahasa Indonesia"
+        "- reason: string penjelasan singkat dalam Bahasa Indonesia yang menjelaskan mengapa foto tersebut valid atau tidak valid"
       ],
       config: {
         responseMimeType: "application/json",
@@ -97,11 +99,12 @@ app.post("/api/verify-selfie", async (req, res) => {
 
   } catch (error: any) {
     console.error("Error during AI selfie verification:", error);
-    return res.json({
-      success: true,
-      is_valid: true,
-      confidence: 0.5,
-      reason: "Verifikasi wajah dilewati karena kendala layanan AI: " + (error.message || error)
+    return res.status(500).json({
+      success: false,
+      is_valid: false,
+      confidence: 0.0,
+      error: "Gagal memproses verifikasi wajah: " + (error.message || error),
+      reason: "Verifikasi wajah ditolak oleh sistem karena kendala pemrosesan AI."
     });
   }
 });
@@ -501,6 +504,98 @@ app.post("/api/generate-ai-report", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Gagal memproses pembuatan laporan otomatis dengan AI: " + (error.message || error)
+    });
+  }
+});
+
+// AI Suspicious Request Pattern Analysis Endpoint
+app.post("/api/analyze-suspicious-request", async (req, res) => {
+  const { leaveRequest, employeeName, employeeHistory, attendanceHistory } = req.body;
+
+  if (!leaveRequest || !employeeName) {
+    return res.status(400).json({ success: false, error: "leaveRequest and employeeName are required." });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+    return res.status(400).json({
+      success: false,
+      error: "Kunci API Gemini tidak dikonfigurasi di server."
+    });
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+
+    // Format inputs for Gemini to stay concise and relevant
+    const cleanedHistory = (employeeHistory || []).map((h: any) => ({
+      tipe: h.tipe,
+      tanggal_mulai: h.tanggal_mulai,
+      tanggal_akhir: h.tanggal_akhir,
+      alasan: h.alasan,
+      status: h.status
+    }));
+
+    const cleanedAttendance = (attendanceHistory || []).map((a: any) => ({
+      tanggal: a.tanggal,
+      status: a.status,
+      jam_masuk: a.jam_masuk || "-",
+      alamat_masuk: a.alamat_masuk || "-",
+      latitude_masuk: a.latitude_masuk || 0,
+      longitude_masuk: a.longitude_masuk || 0
+    }));
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [
+        "Anda adalah analis SDM (HR Analyst) pintar dan penyelidik integritas kehadiran karyawan.\n" +
+        "Tugas Anda adalah menganalisis apakah pengajuan izin/sakit/cuti (leave request) tertentu di bawah ini mencurigakan (suspicious) atau wajar (normal) berdasarkan profil karyawan, riwayat pengajuan izin mereka sebelumnya, dan pola lokasi kehadiran mereka (berdasarkan data GPS/alamat check-in absensi).\n\n" +
+        "Berikut rincian pengajuan yang sedang diperiksa:\n" +
+        `- Nama Karyawan: ${employeeName}\n` +
+        `- Tipe Pengajuan: ${leaveRequest.tipe} (Mulai: ${leaveRequest.tanggal_mulai} s/d ${leaveRequest.tanggal_akhir})\n` +
+        `- Alasan Pengajuan: "${leaveRequest.alasan}"\n\n` +
+        "Berikut data Riwayat Pengajuan Izin sebelumnya untuk karyawan ini:\n" +
+        JSON.stringify(cleanedHistory, null, 2) + "\n\n" +
+        "Berikut data Riwayat Lokasi & Kehadiran (Attendance) terbaru dari karyawan ini:\n" +
+        JSON.stringify(cleanedAttendance, null, 2) + "\n\n" +
+        "Silakan lakukan analisis mendalam:\n" +
+        "1. Pola Hari Kejadian: Apakah ada kecenderungan mengajukan izin pada hari Jumat/Senin (pola memperpanjang akhir pekan / long weekend)?\n" +
+        "2. Pola Frekuensi: Apakah frekuensi izin/sakit sangat tinggi atau tidak wajar?\n" +
+        "3. Pola Lokasi Absen Terakhir: Apakah lokasi check-in absensi masuk/pulang terakhir (alamat_masuk/koordinat) berada di luar kota, tempat wisata, atau sangat jauh dari koordinat kantor biasa, padahal mengajukan izin sakit atau kedinasan lokal? Apakah terdeteksi ketidakcocokan lokasi yang signifikan?\n" +
+        "4. Konsistensi Alasan: Apakah alasan yang diberikan terdengar klise atau berulang secara mencurigakan?\n\n" +
+        "Berikan respons dalam format JSON yang valid."
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            is_suspicious: { type: Type.BOOLEAN },
+            confidence: { type: Type.NUMBER },
+            reasons: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            },
+            location_analysis: { type: Type.STRING },
+            history_analysis: { type: Type.STRING },
+            recommendation: { type: Type.STRING }
+          },
+          required: ["is_suspicious", "confidence", "reasons", "location_analysis", "history_analysis", "recommendation"]
+        }
+      }
+    });
+
+    const result = JSON.parse(response.text?.trim() || "{}");
+    return res.json({
+      success: true,
+      analysis: result
+    });
+
+  } catch (error: any) {
+    console.error("Error during AI suspicious request analysis:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Gagal memproses analisis otomatis dengan AI: " + (error.message || error)
     });
   }
 });

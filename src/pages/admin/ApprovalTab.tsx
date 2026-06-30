@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc, addDoc } from 'firebase/firestore';
-import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown, Edit, Trash2, Sparkles } from 'lucide-react';
+import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc, addDoc, getDocs, where, limit } from 'firebase/firestore';
+import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown, Edit, Trash2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, MapPin } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -15,6 +15,13 @@ export default function ApprovalTab() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'leave' | 'overtime'>('leave');
     const [isExtracting, setIsExtracting] = useState(false);
+
+    // AI Suspicious Request Analysis states
+    const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+    const [isScanningAll, setIsScanningAll] = useState(false);
+    const [analysisResultsMap, setAnalysisResultsMap] = useState<Record<string, any>>({});
+    const [selectedAnalysis, setSelectedAnalysis] = useState<any>(null);
+    const [showAnalysisModal, setShowAnalysisModal] = useState(false);
 
     const handleAIApprovalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -113,6 +120,148 @@ export default function ApprovalTab() {
             setIsExtracting(false);
             e.target.value = '';
         }
+    };
+
+    const handleAnalyzeRequest = async (request: any) => {
+        // If already analyzed, just open the modal to display details
+        if (analysisResultsMap[request.id]) {
+            setSelectedAnalysis({
+                request,
+                analysis: analysisResultsMap[request.id]
+            });
+            setShowAnalysisModal(true);
+            return;
+        }
+
+        setAnalyzingId(request.id);
+        const toastId = toast.loading('Mengambil data riwayat & mendeteksi pola lokasi...');
+
+        try {
+            // 1. Fetch employee details
+            const user = usersMap[request.user_id] || {};
+            const employeeName = user.nama || 'Karyawan';
+
+            // 2. Fetch recent attendance logs of this user (up to 30 records)
+            const attendanceSnap = await getDocs(
+                query(
+                    collection(db, 'attendance'),
+                    where('user_id', '==', request.user_id),
+                    limit(30)
+                )
+            );
+            const attendanceHistory: any[] = [];
+            attendanceSnap.forEach(docSnap => {
+                attendanceHistory.push({ id: docSnap.id, ...docSnap.data() });
+            });
+
+            // 3. Get other leave requests of this user from local list
+            const employeeHistory = leaveRequests.filter(h => h.user_id === request.user_id && h.id !== request.id);
+
+            // 4. Call our Gemini analysis API
+            const response = await fetch('/api/analyze-suspicious-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    leaveRequest: request,
+                    employeeName,
+                    employeeHistory,
+                    attendanceHistory
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || 'Gagal terhubung dengan mesin analisis AI.');
+            }
+
+            const data = await response.json();
+            if (!data.success || !data.analysis) {
+                throw new Error('Gagal memproses hasil analisis kecurigaan AI.');
+            }
+
+            const analysis = data.analysis;
+
+            // Save in map
+            setAnalysisResultsMap(prev => ({
+                ...prev,
+                [request.id]: analysis
+            }));
+
+            // Open modal
+            setSelectedAnalysis({
+                request,
+                analysis
+            });
+            setShowAnalysisModal(true);
+
+            toast.success('Analisis Pola AI Selesai!', { id: toastId });
+
+        } catch (error: any) {
+            console.error('Error in handleAnalyzeRequest:', error);
+            toast.error(error.message || 'Gagal menganalisis pola absensi', { id: toastId });
+        } finally {
+            setAnalyzingId(null);
+        }
+    };
+
+    const handleAutoScanAllPending = async () => {
+        const pendingLeaves = filteredLeaves.filter(item => item.status === 'pending' && !analysisResultsMap[item.id]);
+        if (pendingLeaves.length === 0) {
+            toast.success('Semua pengajuan pending sudah dipindai oleh AI!');
+            return;
+        }
+
+        setIsScanningAll(true);
+        const toastId = toast.loading(`Sedang memindai ${pendingLeaves.length} pengajuan via AI...`);
+        let successCount = 0;
+
+        for (const req of pendingLeaves) {
+            try {
+                const user = usersMap[req.user_id] || {};
+                const employeeName = user.nama || 'Karyawan';
+
+                const attendanceSnap = await getDocs(
+                    query(
+                        collection(db, 'attendance'),
+                        where('user_id', '==', req.user_id),
+                        limit(30)
+                    )
+                );
+                const attendanceHistory: any[] = [];
+                attendanceSnap.forEach(docSnap => {
+                    attendanceHistory.push({ id: docSnap.id, ...docSnap.data() });
+                });
+
+                const employeeHistory = leaveRequests.filter(h => h.user_id === req.user_id && h.id !== req.id);
+
+                const response = await fetch('/api/analyze-suspicious-request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        leaveRequest: req,
+                        employeeName,
+                        employeeHistory,
+                        attendanceHistory
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.analysis) {
+                        setAnalysisResultsMap(prev => ({
+                            ...prev,
+                            [req.id]: data.analysis
+                        }));
+                        successCount++;
+                    }
+                }
+            } catch (err) {
+                console.warn('Gagal memindai pengajuan:', req.id, err);
+            }
+        }
+
+        setIsScanningAll(false);
+        toast.success(`Selesai! Berhasil memindai ${successCount} dari ${pendingLeaves.length} pengajuan.`, { id: toastId });
     };
     
     // Filters
@@ -378,6 +527,18 @@ export default function ApprovalTab() {
                         />
                     </label>
 
+                    {activeTab === 'leave' && (
+                        <button
+                            onClick={handleAutoScanAllPending}
+                            disabled={isScanningAll}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold rounded-xl shadow-sm hover:shadow transition-all text-xs cursor-pointer justify-center disabled:opacity-50"
+                            title="Audit otomatis semua pengajuan pending untuk mendeteksi kecurigaan pola riwayat & lokasi"
+                        >
+                            <AlertTriangle size={14} className={isScanningAll ? "animate-bounce" : ""} />
+                            <span>{isScanningAll ? "Mengaudit Pola..." : "Audit Kecurigaan AI"}</span>
+                        </button>
+                    )}
+
                     <div className="flex bg-slate-200 p-1 rounded-xl">
                         <button 
                             onClick={() => { setActiveTab('leave'); setFilterType('all'); }} 
@@ -578,7 +739,18 @@ export default function ApprovalTab() {
                                             <tr key={item.id} className="hover:bg-slate-50/40 transition-colors">
                                                 <td className="p-4">
                                                     <div className="flex flex-col">
-                                                        <span className="font-semibold text-slate-800 text-sm">{user.nama || 'Karyawan'}</span>
+                                                        <span className="font-semibold text-slate-800 text-sm flex items-center gap-1.5 flex-wrap">
+                                                            {user.nama || 'Karyawan'}
+                                                            {analysisResultsMap[item.id] && (
+                                                                <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                                                    analysisResultsMap[item.id].is_suspicious 
+                                                                        ? 'bg-rose-100 text-rose-800 animate-pulse' 
+                                                                        : 'bg-emerald-100 text-emerald-800'
+                                                                }`}>
+                                                                    {analysisResultsMap[item.id].is_suspicious ? 'Suspicious' : 'Verified'}
+                                                                </span>
+                                                            )}
+                                                        </span>
                                                         <span className="text-xs text-slate-400">{user.jabatan || 'Staf'} - {user.divisi || '-'}</span>
                                                     </div>
                                                 </td>
@@ -663,6 +835,30 @@ export default function ApprovalTab() {
                                                             title="Hapus Pengajuan"
                                                         >
                                                             <Trash2 size={15} />
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => handleAnalyzeRequest(item)}
+                                                            className={`px-2.5 h-9 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm ${
+                                                                analysisResultsMap[item.id]
+                                                                    ? analysisResultsMap[item.id].is_suspicious
+                                                                        ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                                                                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                                                    : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white'
+                                                            }`}
+                                                            title="Analisis kecurigaan pola pengajuan & riwayat lokasi via AI"
+                                                            disabled={analyzingId === item.id}
+                                                        >
+                                                            <Sparkles size={12} className={analyzingId === item.id ? "animate-spin" : ""} />
+                                                            <span>
+                                                                {analyzingId === item.id 
+                                                                    ? 'Memindai...' 
+                                                                    : analysisResultsMap[item.id]
+                                                                        ? analysisResultsMap[item.id].is_suspicious
+                                                                            ? 'Suspicious!'
+                                                                            : 'Aman (AI)'
+                                                                        : 'Analisis AI'}
+                                                            </span>
                                                         </button>
 
                                                         <button
@@ -1190,6 +1386,169 @@ export default function ApprovalTab() {
                 onConfirm={handleDeleteConfirm}
                 onCancel={() => setDeleteData(null)}
             />
+
+            {/* AI Suspicious Pattern Analysis Modal */}
+            {showAnalysisModal && selectedAnalysis && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-xl border border-slate-100 max-w-2xl w-full overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                        
+                        {/* Modal Header */}
+                        <div className="px-6 py-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="text-amber-500 animate-pulse" size={20} />
+                                <div>
+                                    <h4 className="text-md font-bold text-slate-800">Analisis Integritas & Pola Absensi Karyawan (AI)</h4>
+                                    <p className="text-xs text-slate-500">Mendeteksi potensi manipulasi berdasarkan riwayat dan lokasi</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => { setShowAnalysisModal(false); setSelectedAnalysis(null); }}
+                                className="p-1.5 hover:bg-slate-200/60 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6 space-y-6 overflow-y-auto">
+                            {/* Target Leave Info */}
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 grid grid-cols-2 gap-4 text-xs">
+                                <div>
+                                    <span className="text-slate-400 block uppercase font-semibold">Nama Karyawan</span>
+                                    <span className="text-slate-800 font-bold text-sm">{selectedAnalysis.employeeName || usersMap[selectedAnalysis.request.user_id]?.nama || 'Karyawan'}</span>
+                                </div>
+                                <div>
+                                    <span className="text-slate-400 block uppercase font-semibold">Tipe & Durasi Pengajuan</span>
+                                    <span className="text-slate-800 font-bold text-sm capitalize">
+                                        {selectedAnalysis.request.tipe} ({format(parseISO(selectedAnalysis.request.tanggal_mulai), 'dd MMM yyyy', { locale: idLocale })} s/d {format(parseISO(selectedAnalysis.request.tanggal_akhir), 'dd MMM yyyy', { locale: idLocale })})
+                                    </span>
+                                </div>
+                                <div className="col-span-2 border-t border-slate-150 pt-2 mt-1">
+                                    <span className="text-slate-400 block uppercase font-semibold">Alasan yang Diajukan</span>
+                                    <span className="text-slate-700 italic font-medium">"{selectedAnalysis.request.alasan}"</span>
+                                </div>
+                            </div>
+
+                            {/* Indicator Panel */}
+                            <div className={`p-5 rounded-2xl border flex items-start gap-4 ${
+                                selectedAnalysis.analysis.is_suspicious 
+                                    ? 'bg-rose-50 border-rose-100 text-rose-900' 
+                                    : 'bg-emerald-50 border-emerald-100 text-emerald-900'
+                            }`}>
+                                <div className={`p-3 rounded-xl ${selectedAnalysis.analysis.is_suspicious ? 'bg-rose-100' : 'bg-emerald-100'}`}>
+                                    {selectedAnalysis.analysis.is_suspicious ? (
+                                        <AlertTriangle className="text-rose-600 animate-bounce" size={24} />
+                                    ) : (
+                                        <ShieldCheck className="text-emerald-600" size={24} />
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                                        <h5 className="font-extrabold text-lg tracking-tight">
+                                            {selectedAnalysis.analysis.is_suspicious ? 'Terdeteksi Pola Mencurigakan!' : 'Pola Dinilai Aman & Wajar'}
+                                        </h5>
+                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold tracking-wide ${
+                                            selectedAnalysis.analysis.is_suspicious 
+                                                ? 'bg-rose-200 text-rose-800' 
+                                                : 'bg-emerald-200 text-emerald-800'
+                                        }`}>
+                                            Keyakinan: {selectedAnalysis.analysis.confidence_score}%
+                                        </span>
+                                    </div>
+                                    <p className="text-xs mt-1.5 opacity-90 leading-relaxed">
+                                        {selectedAnalysis.analysis.suspicion_details || 'AI tidak mendeteksi anomali aneh atau pengajuan mencurigakan pada riwayat absensi dan geolokasi karyawan.'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Two-Column Deep Analysis */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                {/* Employee History Column */}
+                                <div className="border border-slate-150 rounded-xl p-4 space-y-2 bg-slate-50/50">
+                                    <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs uppercase tracking-wider">
+                                        <Clock size={14} className="text-indigo-500" />
+                                        <span>Analisis Pola Riwayat</span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 leading-relaxed">
+                                        {selectedAnalysis.analysis.history_analysis || 'Riwayat pengajuan cuti/izin karyawan ini konsisten dan tidak menunjukkan kecenderungan memanipulasi akhir pekan atau hari libur.'}
+                                    </p>
+                                </div>
+
+                                {/* Location Column */}
+                                <div className="border border-slate-150 rounded-xl p-4 space-y-2 bg-slate-50/50">
+                                    <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs uppercase tracking-wider">
+                                        <MapPin size={14} className="text-rose-500" />
+                                        <span>Analisis Riwayat Lokasi</span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 leading-relaxed">
+                                        {selectedAnalysis.analysis.location_analysis || 'Titik koordinat GPS dan alamat check-in terakhir sinkron dengan alamat rumah atau lokasi penugasan karyawan.'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Key Indicators / Reasons */}
+                            {selectedAnalysis.analysis.reasons && selectedAnalysis.analysis.reasons.length > 0 && (
+                                <div className="space-y-2">
+                                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Faktor Temuan Kunci</span>
+                                    <ul className="space-y-1.5">
+                                        {selectedAnalysis.analysis.reasons.map((reason: string, i: number) => (
+                                            <li key={i} className="flex items-start gap-2 text-xs text-slate-700">
+                                                <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${selectedAnalysis.analysis.is_suspicious ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                                                <span>{reason}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {/* HR Actions Recommendations */}
+                            <div className="p-4 rounded-xl border border-amber-100 bg-amber-50/60 space-y-1.5">
+                                <span className="text-xs font-bold text-amber-800 uppercase tracking-wider block flex items-center gap-1">
+                                    <CheckCircle2 size={13} className="text-amber-600" />
+                                    Rekomendasi Tindakan HRD
+                                </span>
+                                <p className="text-xs text-amber-900 leading-relaxed">
+                                    {selectedAnalysis.analysis.hr_recommendation || 'Bisa disetujui secara normal. Tetap monitor pengajuan berikutnya secara berkala.'}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex justify-end gap-3">
+                            <button
+                                onClick={() => { setShowAnalysisModal(false); setSelectedAnalysis(null); }}
+                                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200/60 rounded-xl transition-colors border border-slate-200"
+                            >
+                                Tutup
+                            </button>
+                            {selectedAnalysis.analysis.is_suspicious && selectedAnalysis.request.status === 'pending' && (
+                                <button
+                                    onClick={() => {
+                                        setActionData({ collectionName: 'leave_requests', id: selectedAnalysis.request.id, status: 'rejected' });
+                                        setShowAnalysisModal(false);
+                                        setSelectedAnalysis(null);
+                                    }}
+                                    className="px-4 py-2 text-xs font-bold bg-rose-600 text-white rounded-xl hover:bg-rose-700 transition-colors shadow-sm"
+                                >
+                                    Tolak Pengajuan Ini
+                                </button>
+                            )}
+                            {!selectedAnalysis.analysis.is_suspicious && selectedAnalysis.request.status === 'pending' && (
+                                <button
+                                    onClick={() => {
+                                        setActionData({ collectionName: 'leave_requests', id: selectedAnalysis.request.id, status: 'approved' });
+                                        setShowAnalysisModal(false);
+                                        setSelectedAnalysis(null);
+                                    }}
+                                    className="px-4 py-2 text-xs font-bold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors shadow-sm"
+                                >
+                                    Setujui Pengajuan Ini
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
