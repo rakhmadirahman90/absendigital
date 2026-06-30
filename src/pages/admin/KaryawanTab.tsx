@@ -230,6 +230,14 @@ export default function KaryawanTab() {
         e.preventDefault();
         try {
             const cleanWaNumber = formData.waNumber.replace(/\D/g, '');
+            
+            // Periksa jika nomor WA sudah digunakan oleh karyawan lain
+            const duplicateUser = users.find(u => u.waNumber === cleanWaNumber && u.id !== editingId);
+            if (duplicateUser) {
+                toast.error(`Nomor WhatsApp ${cleanWaNumber} sudah terdaftar untuk karyawan lain (${duplicateUser.nama})!`);
+                return;
+            }
+
             const userId = editingId || `wa-${cleanWaNumber}`;
             
             const payload = { ...formData, waNumber: cleanWaNumber };
@@ -340,7 +348,7 @@ export default function KaryawanTab() {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">No. WhatsApp</label>
-                            <input required disabled={!!editingId} type="text" value={formData.waNumber} onChange={e => setFormData({...formData, waNumber: e.target.value})} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50" />
+                            <input required type="text" value={formData.waNumber} onChange={e => setFormData({...formData, waNumber: e.target.value})} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>

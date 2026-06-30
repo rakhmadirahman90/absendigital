@@ -419,6 +419,92 @@ app.post("/api/extract-office", async (req, res) => {
   }
 });
 
+// AI Attendance Report Generation & Formatting Endpoint
+app.post("/api/generate-ai-report", async (req, res) => {
+  const { records, users, startDate, endDate, reportType } = req.body;
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+    return res.status(400).json({
+      success: false,
+      error: "Kunci API Gemini tidak dikonfigurasi di server."
+    });
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // Construct simplified datasets to send to Gemini to conserve tokens and prevent clutter
+    const employeesInfo = Object.entries(users || {}).reduce((acc: any, [userId, u]: [string, any]) => {
+      acc[userId] = { nama: u.nama, divisi: u.divisi, jabatan: u.jabatan };
+      return acc;
+    }, {});
+
+    const simplifiedRecords = (records || []).map((r: any) => ({
+      nama: employeesInfo[r.user_id]?.nama || "Tidak Dikenal",
+      divisi: employeesInfo[r.user_id]?.divisi || "-",
+      jabatan: employeesInfo[r.user_id]?.jabatan || "-",
+      tanggal: r.tanggal,
+      jam_masuk: r.jam_masuk || "-",
+      jam_pulang: r.jam_pulang || "-",
+      status: r.status
+    }));
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [
+        "Anda adalah asisten admin pintar yang ahli dalam manajemen sumber daya manusia (SDM) dan analisis data kehadiran.\n" +
+        "Tugas Anda adalah memproses data kehadiran karyawan untuk menghasilkan laporan yang rapi, profesional, siap cetak, dan kaya akan analisis AI.\n\n" +
+        `Jenis Laporan: ${reportType === "monthly" ? "Bulanan" : "Mingguan"}\n` +
+        `Rentang Tanggal: ${startDate} sampai ${endDate}\n\n` +
+        "Berikut adalah data mentah kehadiran karyawan:\n" +
+        JSON.stringify(simplifiedRecords, null, 2) + "\n\n" +
+        "Silakan buat:\n" +
+        "1. htmlReport: Sebuah dokumen HTML mandiri (tanpa tag <html> atau <body> luar, cukup sebuah div container utama yang bisa dirender dalam elemen React) yang diformat dengan CSS inline atau Tailwind CSS (gunakan kelas Tailwind standar). Harus memiliki header instansi/perusahaan, ringkasan statistik (tingkat kehadiran, total hadir, terlambat, tidak hadir), tabel kehadiran yang sangat rapi (bergaris, dengan zebra striping, warna status yang jelas, misal hijau untuk Hadir, merah/kuning untuk Terlambat), serta bagian khusus analisis AI (Analisis AI & Rekomendasi Kehadiran) dalam bahasa Indonesia yang berwibawa dan penuh insight (seperti melacak departemen paling rajin, karyawan paling tepat waktu, tren keterlambatan, dan solusi taktis untuk manajemen).\n" +
+        "2. csvReport: String data CSV standar yang dipisahkan koma, berisi kolom: 'No, Nama Karyawan, Divisi, Jabatan, Tanggal, Jam Masuk, Jam Pulang, Status'. Pastikan semua nama berkarakter khusus dibungkus dengan tanda kutip ganda agar ramah Microsoft Excel.\n" +
+        "3. summary: JSON berisi totalOnTime (number), totalLate (number), complianceRate (string persentase, contoh: '92.5%'), dan summaryComments (penjelasan singkat 1-2 kalimat tentang kondisi kehadiran secara keseluruhan).\n\n" +
+        "Berikan respons dalam format JSON yang valid."
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            htmlReport: { type: Type.STRING },
+            csvReport: { type: Type.STRING },
+            summary: {
+              type: Type.OBJECT,
+              properties: {
+                totalOnTime: { type: Type.NUMBER },
+                totalLate: { type: Type.NUMBER },
+                complianceRate: { type: Type.STRING },
+                summaryComments: { type: Type.STRING }
+              },
+              required: ["totalOnTime", "totalLate", "complianceRate", "summaryComments"]
+            }
+          },
+          required: ["htmlReport", "csvReport", "summary"]
+        }
+      }
+    });
+
+    const result = JSON.parse(response.text?.trim() || "{}");
+    return res.json({
+      success: true,
+      htmlReport: result.htmlReport,
+      csvReport: result.csvReport,
+      summary: result.summary
+    });
+
+  } catch (error: any) {
+    console.error("Error during AI report generation:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Gagal memproses pembuatan laporan otomatis dengan AI: " + (error.message || error)
+    });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

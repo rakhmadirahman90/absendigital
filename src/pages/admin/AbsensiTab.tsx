@@ -26,6 +26,144 @@ export default function AbsensiTab() {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
+    const [showAIReportModal, setShowAIReportModal] = useState(false);
+    const [reportRange, setReportRange] = useState<'weekly' | 'monthly' | 'custom'>('weekly');
+    const [reportStartDate, setReportStartDate] = useState(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 7);
+        return d.toISOString().split('T')[0];
+    });
+    const [reportEndDate, setReportEndDate] = useState(() => {
+        return new Date().toISOString().split('T')[0];
+    });
+    const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+    const [generatedReport, setGeneratedReport] = useState<any>(null);
+
+    const handleRangePresetChange = (preset: 'weekly' | 'monthly' | 'custom') => {
+        setReportRange(preset);
+        const end = new Date();
+        const start = new Date();
+        if (preset === 'weekly') {
+            start.setDate(end.getDate() - 7);
+            setReportStartDate(start.toISOString().split('T')[0]);
+            setReportEndDate(end.toISOString().split('T')[0]);
+        } else if (preset === 'monthly') {
+            start.setDate(end.getDate() - 30);
+            setReportStartDate(start.toISOString().split('T')[0]);
+            setReportEndDate(end.toISOString().split('T')[0]);
+        }
+    };
+
+    const handleGenerateAIReport = async () => {
+        setIsGeneratingReport(true);
+        const toastId = toast.loading('Mengambil data absensi & menganalisis dengan AI...');
+        try {
+            const { getDocs } = await import('firebase/firestore');
+            const snap = await getDocs(collection(db, 'attendance'));
+            const allRecords: any[] = [];
+            snap.forEach(doc => {
+                const data = doc.data();
+                allRecords.push({ id: doc.id, ...data });
+            });
+
+            const filtered = allRecords.filter(r => r.tanggal >= reportStartDate && r.tanggal <= reportEndDate);
+            
+            if (filtered.length === 0) {
+                throw new Error(`Tidak ditemukan data absensi untuk rentang tanggal ${reportStartDate} hingga ${reportEndDate}`);
+            }
+
+            const response = await fetch('/api/generate-ai-report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    records: filtered,
+                    users: usersMap,
+                    startDate: reportStartDate,
+                    endDate: reportEndDate,
+                    reportType: reportRange
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Gagal berkomunikasi dengan server AI');
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error('Gagal menghasilkan analisis laporan.');
+            }
+
+            setGeneratedReport(data);
+            toast.success('Laporan AI Berhasil Dihasilkan!', { id: toastId });
+        } catch (error: any) {
+            console.error('Error generating AI report:', error);
+            toast.error(error.message || 'Gagal menghasilkan laporan AI', { id: toastId });
+        } finally {
+            setIsGeneratingReport(false);
+        }
+    };
+
+    const handlePrintAIHTMLReport = () => {
+        if (!generatedReport || !generatedReport.htmlReport) return;
+        
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.bottom = '0';
+        iframe.style.right = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        
+        const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+        if (iframeDoc) {
+            iframeDoc.open();
+            iframeDoc.write(`
+                <html>
+                <head>
+                    <title>Laporan Absensi AI</title>
+                    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+                    <style>
+                        body { font-family: 'Inter', sans-serif; padding: 20px; }
+                        @media print {
+                            .no-print { display: none; }
+                            body { padding: 0; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="max-w-4xl mx-auto">
+                        ${generatedReport.htmlReport}
+                    </div>
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                            setTimeout(function() {
+                                window.parent.document.body.removeChild(window.frameElement);
+                            }, 500);
+                        }
+                    </script>
+                </body>
+                </html>
+            `);
+            iframeDoc.close();
+        }
+    };
+
+    const handleDownloadAICsvReport = () => {
+        if (!generatedReport || !generatedReport.csvReport) return;
+        const blob = new Blob(["\uFEFF" + generatedReport.csvReport], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Laporan_Absensi_AI_${reportStartDate}_sd_${reportEndDate}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('File CSV Laporan berhasil diunduh.');
+    };
+
     const handleAIAttendanceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -294,6 +432,14 @@ export default function AbsensiTab() {
                     >
                         <Download size={14} />
                         <span>Ekspor CSV</span>
+                    </button>
+                    <button
+                        onClick={() => { setShowAIReportModal(true); setGeneratedReport(null); }}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition-all text-xs cursor-pointer font-bold"
+                        title="Hasilkan Laporan Absensi Mingguan/Bulanan terformat rapi dengan dukungan AI"
+                    >
+                        <Sparkles size={14} className="text-white" />
+                        <span>Laporan AI (PDF/Excel)</span>
                     </button>
                 </div>
             </div>
@@ -738,6 +884,190 @@ export default function AbsensiTab() {
                 confirmText="Hapus Permanen"
                 cancelText="Batal"
             />
+
+            {/* AI Attendance Report Modal */}
+            {showAIReportModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col my-8 max-h-[90vh] border border-slate-100 animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-slate-50 to-slate-100/50">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl text-white shadow-sm">
+                                    <Sparkles size={18} />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-800 text-base">Ekspor Laporan Absensi Pintar (AI)</h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">Sajikan laporan mingguan/bulanan yang rapi, lengkap dengan analisis otomatis.</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => setShowAIReportModal(false)} 
+                                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-200/50 rounded-xl transition-all"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+                            {/* Configuration Panel */}
+                            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Pilih Rentang Laporan:</span>
+                                    <div className="flex bg-slate-200 p-1 rounded-xl self-start sm:self-auto">
+                                        <button 
+                                            onClick={() => handleRangePresetChange('weekly')}
+                                            className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all ${reportRange === 'weekly' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        >
+                                            Mingguan (7 Hari)
+                                        </button>
+                                        <button 
+                                            onClick={() => handleRangePresetChange('monthly')}
+                                            className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all ${reportRange === 'monthly' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        >
+                                            Bulanan (30 Hari)
+                                        </button>
+                                        <button 
+                                            onClick={() => setReportRange('custom')}
+                                            className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all ${reportRange === 'custom' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        >
+                                            Kustom
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Mulai</label>
+                                        <input 
+                                            type="date"
+                                            value={reportStartDate}
+                                            onChange={(e) => {
+                                                setReportStartDate(e.target.value);
+                                                setReportRange('custom');
+                                            }}
+                                            className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700 font-medium"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Selesai</label>
+                                        <input 
+                                            type="date"
+                                            value={reportEndDate}
+                                            onChange={(e) => {
+                                                setReportEndDate(e.target.value);
+                                                setReportRange('custom');
+                                            }}
+                                            className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700 font-medium"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleGenerateAIReport}
+                                    disabled={isGeneratingReport}
+                                    className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:from-slate-300 disabled:to-slate-400 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-orange-500/10 flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    <Sparkles size={16} className={isGeneratingReport ? "animate-spin" : ""} />
+                                    <span>{isGeneratingReport ? "Menghasilkan Laporan via AI (Harap Tunggu...)" : "Mulai Pemformatan & Analisis AI"}</span>
+                                </button>
+                            </div>
+
+                            {/* Report Results */}
+                            {generatedReport ? (
+                                <div className="space-y-6">
+                                    {/* AI Insights Summary cards */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex flex-col justify-between">
+                                            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Tingkat Kepatuhan</span>
+                                            <span className="text-3xl font-black text-emerald-700 mt-1">{generatedReport.summary?.complianceRate || '100%'}</span>
+                                            <span className="text-[10px] text-emerald-500 mt-1">Kehadiran tepat waktu</span>
+                                        </div>
+                                        <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex flex-col justify-between">
+                                            <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Tepat Waktu (Hadir)</span>
+                                            <span className="text-3xl font-black text-blue-700 mt-1">{generatedReport.summary?.totalOnTime || 0}</span>
+                                            <span className="text-[10px] text-blue-500 mt-1">Total sesi check-in awal</span>
+                                        </div>
+                                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex flex-col justify-between">
+                                            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Terlambat</span>
+                                            <span className="text-3xl font-black text-amber-700 mt-1">{generatedReport.summary?.totalLate || 0}</span>
+                                            <span className="text-[10px] text-amber-500 mt-1">Total check-in lewat jam masuk</span>
+                                        </div>
+                                    </div>
+
+                                    {/* AI Commentary */}
+                                    <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-100 flex gap-3">
+                                        <div className="p-1 bg-orange-100 rounded-lg text-orange-600 h-fit">
+                                            <Sparkles size={16} />
+                                        </div>
+                                        <div>
+                                            <span className="text-xs font-bold text-orange-800 uppercase tracking-wider">Komentar Ringkas AI</span>
+                                            <p className="text-sm text-slate-700 mt-1 font-medium">{generatedReport.summary?.summaryComments}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Printable Report Preview */}
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pratinjau Layout Laporan (Siap Cetak)</span>
+                                            <span className="text-[10px] text-slate-400">Gunakan tombol cetak di bawah untuk mencetak langsung ke printer/PDF</span>
+                                        </div>
+                                        <div className="bg-slate-100 p-6 rounded-2xl border border-slate-200 max-h-[400px] overflow-y-auto shadow-inner">
+                                            <div 
+                                                className="bg-white p-8 rounded-xl shadow-md border border-slate-200 text-slate-800 overflow-x-auto min-w-[650px] markdown-body"
+                                                dangerouslySetInnerHTML={{ __html: generatedReport.htmlReport }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                !isGeneratingReport && (
+                                    <div className="py-12 flex flex-col items-center text-center justify-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                                        <div className="p-4 bg-amber-50 rounded-full text-amber-500 mb-3 animate-pulse">
+                                            <Sparkles size={24} />
+                                        </div>
+                                        <h4 className="font-bold text-slate-700 text-sm">Belum Ada Laporan yang Dibuat</h4>
+                                        <p className="text-xs text-slate-400 mt-1 max-w-sm">Pilih rentang tanggal di atas lalu klik tombol pemformatan untuk menghasilkan laporan terstruktur dan analisis otomatis oleh AI.</p>
+                                    </div>
+                                )
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50">
+                            <span className="text-[11px] text-slate-400 text-center sm:text-left font-medium">
+                                Laporan diformat otomatis & dioptimasi ramah printer menggunakan AI.
+                            </span>
+                            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                                <button 
+                                    onClick={() => setShowAIReportModal(false)}
+                                    className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer w-full sm:w-auto"
+                                >
+                                    Tutup
+                                </button>
+                                {generatedReport && (
+                                    <>
+                                        <button 
+                                            onClick={handleDownloadAICsvReport}
+                                            className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-sm w-full sm:w-auto"
+                                        >
+                                            <Download size={14} />
+                                            <span>Unduh Excel (CSV)</span>
+                                        </button>
+                                        <button 
+                                            onClick={handlePrintAIHTMLReport}
+                                            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl hover:from-amber-600 hover:to-orange-600 transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-orange-500/10 w-full sm:w-auto"
+                                        >
+                                            <Printer size={14} />
+                                            <span>Cetak Laporan PDF</span>
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Photo Viewer Modal */}
             {viewPhoto && (
