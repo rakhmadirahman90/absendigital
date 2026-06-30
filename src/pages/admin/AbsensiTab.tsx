@@ -1105,8 +1105,8 @@ export default function AbsensiTab() {
             <div id="print-daily-area" className="hidden p-8 font-sans space-y-6">
                 <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
                     <div>
-                        <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">HRIS ABSENSI ONLINE</h1>
-                        <p className="text-xs text-slate-500 font-medium">LAPORAN MONITORING ABSENSI HARIAN KARYAWAN</p>
+                        <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">PRESENSI KARYAWAN US 162 BILIBILI</h1>
+                        <p className="text-xs text-slate-500 font-medium">LAPORAN MONITORING HARIAN HADIR 162</p>
                     </div>
                     <div className="text-right text-xs">
                         <p className="font-bold">Admin Portal</p>
@@ -1173,13 +1173,13 @@ export default function AbsensiTab() {
                         <p className="text-slate-400">Dibuat Oleh,</p>
                         <div className="h-16"></div>
                         <p className="font-bold underline uppercase">HR Staff</p>
-                        <p className="text-[10px] text-slate-400">HRIS Administration</p>
+                        <p className="text-[10px] text-slate-400">Hadir 162 - US Bilibili 162</p>
                     </div>
                     <div>
                         <p className="text-slate-400">Disetujui Oleh,</p>
                         <div className="h-16"></div>
                         <p className="font-bold underline uppercase">HR Manager</p>
-                        <p className="text-[10px] text-slate-400">HRIS Online System</p>
+                        <p className="text-[10px] text-slate-400">Hadir 162 - US Bilibili 162</p>
                     </div>
                 </div>
             </div>

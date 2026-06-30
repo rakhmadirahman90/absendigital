@@ -34,7 +34,7 @@ export default function Layout() {
       {/* Sidebar for Desktop */}
       <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200 shrink-0">
         <div className="p-6 border-b border-slate-200">
-          <h1 className="text-xl font-bold text-slate-800">HRIS System</h1>
+          <h1 className="text-xl font-bold text-slate-800">Hadir 162</h1>
         </div>
         <nav className="flex-1 p-4 space-y-2">
           {navItems.map((item) => (
@@ -88,7 +88,7 @@ export default function Layout() {
 
         {/* Mobile Header */}
         <header className="md:hidden bg-white border-b border-slate-200 p-4 flex justify-between items-center shrink-0">
-          <h1 className="text-lg font-bold text-slate-800">HRIS System</h1>
+          <h1 className="text-lg font-bold text-slate-800">Hadir 162</h1>
           <div className="flex items-center space-x-2">
             <NotificationBell />
             <button onClick={handleLogout} className="text-red-600 p-2 hover:bg-red-50 rounded-lg transition-all">

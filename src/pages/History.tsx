@@ -598,8 +598,8 @@ export default function History() {
       <div id="print-area" className="hidden p-8 font-sans space-y-6">
         <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">HRIS ABSENSI SYSTEM</h1>
-            <p className="text-xs text-slate-500 font-medium">LAPORAN REKAPITULASI KEHADIRAN KARYAWAN</p>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">PRESENSI KARYAWAN US 162 BILIBILI</h1>
+            <p className="text-xs text-slate-500 font-medium">LAPORAN REKAPITULASI HADIR 162</p>
           </div>
           <div className="text-right text-xs">
             <p className="font-bold">{dbUser?.nama || 'Karyawan'}</p>
@@ -666,7 +666,7 @@ export default function History() {
             <p className="text-slate-400">Hormat Kami,</p>
             <div className="h-16"></div>
             <p className="font-bold underline uppercase">HR Manager / Admin</p>
-            <p className="text-[10px] text-slate-400">HRIS Absensi Online</p>
+            <p className="text-[10px] text-slate-400">Hadir 162 - US Bilibili 162</p>
           </div>
         </div>
       </div>

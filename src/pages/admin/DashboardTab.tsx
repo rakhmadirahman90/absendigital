@@ -213,7 +213,7 @@ export default function DashboardTab() {
       {/* Header Premium Section */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
         <div>
-          <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Sistem HRIS Analisis</span>
+          <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Hadir 162 • US Bilibili 162</span>
           <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-0.5">Ringkasan Eksekutif</h2>
           <p className="text-xs text-slate-400 mt-1">Pantau dan kelola presensi karyawan, perizinan, serta rekap data langsung secara real-time.</p>
         </div>
