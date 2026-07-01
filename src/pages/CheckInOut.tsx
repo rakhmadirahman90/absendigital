@@ -764,6 +764,7 @@ export default function CheckInOut() {
             audio={false}
             ref={webcamRef}
             screenshotFormat="image/jpeg"
+            screenshotWidth={640}
             videoConstraints={{ facingMode }}
             className="object-cover w-full h-full"
             playsInline={true}
