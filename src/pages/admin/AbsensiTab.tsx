@@ -20,6 +20,18 @@ export default function AbsensiTab() {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Hadir' | 'Terlambat' | 'absen'>('all');
     
+    // Subtab states for Monthly AI reports
+    const [activeSubTab, setActiveSubTab] = useState<'harian' | 'bulanan'>('harian');
+    const [selectedMonth, setSelectedMonth] = useState(() => {
+        const today = new Date();
+        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`; // "YYYY-MM"
+    });
+    const [selectedMonthDivisi, setSelectedMonthDivisi] = useState('');
+    const [monthlyRecords, setMonthlyRecords] = useState<any[]>([]);
+    const [monthlyLoading, setMonthlyLoading] = useState(false);
+    const [monthlyReportData, setMonthlyReportData] = useState<any>(null);
+    const [isGeneratingMonthly, setIsGeneratingMonthly] = useState(false);
+    
     const [editingRecord, setEditingRecord] = useState<any>(null);
     const [editForm, setEditForm] = useState({ jam_masuk: '', jam_pulang: '', status: '' });
     
@@ -269,6 +281,178 @@ export default function AbsensiTab() {
         return () => unsubAttendance();
     }, [filterDate, filterDivisi, usersMap]);
 
+    const fetchMonthlyRecords = async () => {
+        if (Object.keys(usersMap).length === 0) return;
+        setMonthlyLoading(true);
+        try {
+            const { getDocs, query, collection, where } = await import('firebase/firestore');
+            const start = `${selectedMonth}-01`;
+            const end = `${selectedMonth}-31`;
+            const q = query(
+                collection(db, 'attendance'),
+                where('tanggal', '>=', start),
+                where('tanggal', '<=', end)
+            );
+            const snap = await getDocs(q);
+            const records: any[] = [];
+            snap.forEach(doc => {
+                records.push({ id: doc.id, ...doc.data() });
+            });
+            setMonthlyRecords(records);
+        } catch (error) {
+            console.error('Error fetching monthly records:', error);
+            toast.error('Gagal mengambil data absensi bulanan.');
+        } finally {
+            setMonthlyLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeSubTab === 'bulanan') {
+            fetchMonthlyRecords();
+        }
+    }, [selectedMonth, activeSubTab, usersMap]);
+
+    const filteredMonthlyRecords = monthlyRecords.filter(r => {
+        if (!selectedMonthDivisi) return true;
+        return usersMap[r.user_id]?.divisi === selectedMonthDivisi;
+    });
+
+    const handleGenerateMonthlyAIReport = async () => {
+        if (filteredMonthlyRecords.length === 0) {
+            toast.error('Tidak ada data absensi untuk rentang bulan dan divisi terpilih.');
+            return;
+        }
+        setIsGeneratingMonthly(true);
+        const toastId = toast.loading('Mengambil data absensi & menganalisis dengan AI...');
+        try {
+            const start = `${selectedMonth}-01`;
+            const end = `${selectedMonth}-31`;
+            const response = await fetch('/api/generate-ai-report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    records: filteredMonthlyRecords,
+                    users: usersMap,
+                    startDate: start,
+                    endDate: end,
+                    reportType: 'monthly'
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'Gagal berkomunikasi dengan server AI');
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error('Gagal menghasilkan analisis laporan.');
+            }
+
+            setMonthlyReportData(data);
+            toast.success('Laporan & Ringkasan Eksekutif AI Berhasil Dihasilkan!', { id: toastId });
+        } catch (error: any) {
+            console.error('Error generating AI monthly report:', error);
+            toast.error(error.message || 'Gagal menghasilkan laporan AI', { id: toastId });
+        } finally {
+            setIsGeneratingMonthly(false);
+        }
+    };
+
+    const handlePrintMonthlyReport = () => {
+        if (!monthlyReportData || !monthlyReportData.htmlReport) return;
+        
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.bottom = '0';
+        iframe.style.right = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        
+        const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+        if (iframeDoc) {
+            iframeDoc.open();
+            iframeDoc.write(`
+                <html>
+                <head>
+                    <title>Laporan Absensi AI Bulanan</title>
+                    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+                    <style>
+                        body { font-family: 'Inter', sans-serif; padding: 20px; }
+                        @media print {
+                            .no-print { display: none; }
+                            body { padding: 0; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="max-w-4xl mx-auto">
+                        ${monthlyReportData.htmlReport}
+                    </div>
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                            setTimeout(function() {
+                                window.parent.document.body.removeChild(window.frameElement);
+                            }, 500);
+                        }
+                    </script>
+                </body>
+                </html>
+            `);
+            iframeDoc.close();
+        }
+    };
+
+    const handleDownloadMonthlyCSV = () => {
+        if (!monthlyReportData || !monthlyReportData.csvReport) return;
+        const blob = new Blob(["\uFEFF" + monthlyReportData.csvReport], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Laporan_Absensi_AI_${selectedMonth}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('File CSV Laporan Bulanan berhasil diunduh.');
+    };
+
+    const handleExportMonthlyCSV = () => {
+        if (filteredMonthlyRecords.length === 0) {
+            toast.error('Tidak ada data bulanan untuk diekspor.');
+            return;
+        }
+        const headers = ['No', 'Nama Karyawan', 'Divisi', 'Jabatan', 'Tanggal', 'Jam Masuk', 'Jam Pulang', 'Status'];
+        const rows = filteredMonthlyRecords.map((item, idx) => {
+            const u = usersMap[item.user_id] || {};
+            return [
+                idx + 1,
+                `"${(u.nama || 'Tidak Dikenal').replace(/"/g, '""')}"`,
+                `"${(u.divisi || '-').replace(/"/g, '""')}"`,
+                `"${(u.jabatan || '-').replace(/"/g, '""')}"`,
+                item.tanggal,
+                item.jam_masuk || '-',
+                item.jam_pulang || '-',
+                item.status || 'Hadir'
+            ];
+        });
+
+        const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Rekap_Presensi_Bulanan_${selectedMonth}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('Rekap data bulanan berhasil diekspor ke CSV.');
+    };
+
     const handleOpenMap = (lat: number, lng: number) => {
         window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
     };
@@ -395,11 +579,39 @@ export default function AbsensiTab() {
                 }
             `}</style>
 
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 no-print">
-                <div>
-                    <h3 className="text-xl font-bold text-slate-800">Monitor Absensi</h3>
-                    <p className="text-xs text-slate-500 mt-1">Kelola dan pantau ketepatan waktu, foto selfie, serta lokasi absen harian karyawan.</p>
-                </div>
+            {/* Subtab Selector */}
+            <div className="flex border-b border-slate-200 no-print">
+                <button
+                    onClick={() => setActiveSubTab('harian')}
+                    className={`px-5 py-3 border-b-2 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+                        activeSubTab === 'harian'
+                            ? 'border-blue-600 text-blue-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    <Users size={15} />
+                    <span>Presensi Harian</span>
+                </button>
+                <button
+                    onClick={() => setActiveSubTab('bulanan')}
+                    className={`px-5 py-3 border-b-2 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+                        activeSubTab === 'bulanan'
+                            ? 'border-blue-600 text-blue-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    <Sparkles size={15} />
+                    <span>Laporan & Ringkasan AI Bulanan</span>
+                </button>
+            </div>
+
+            {activeSubTab === 'harian' ? (
+                <>
+                    <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 no-print">
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800">Monitor Absensi</h3>
+                            <p className="text-xs text-slate-500 mt-1">Kelola dan pantau ketepatan waktu, foto selfie, serta lokasi absen harian karyawan.</p>
+                        </div>
                 
                 {/* Admin Export Actions */}
                 <div className="flex flex-wrap gap-2">
@@ -802,6 +1014,221 @@ export default function AbsensiTab() {
                     </table>
                 </div>
             </div>
+            </>
+            ) : (
+                <div className="space-y-6 no-print">
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+                        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+                            <div>
+                                <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Hadir 162 • Sistem Laporan AI</span>
+                                <h3 className="text-2xl font-black text-slate-800 mt-1 font-sans">Laporan Bulanan & Ringkasan Eksekutif AI</h3>
+                                <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                                    Unduh rekap bulanan dalam format CSV, cetak lembar laporan PDF, dan hasilkan ringkasan eksekutif natural language bertenaga AI secara otomatis dari data log kehadiran.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Control Filters */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-100">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pilih Bulan & Tahun</label>
+                                <input
+                                    type="month"
+                                    value={selectedMonth}
+                                    onChange={(e) => {
+                                        setSelectedMonth(e.target.value);
+                                        setMonthlyReportData(null); // Reset when month changes
+                                    }}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Saring Divisi</label>
+                                <select
+                                    value={selectedMonthDivisi}
+                                    onChange={(e) => {
+                                        setSelectedMonthDivisi(e.target.value);
+                                        setMonthlyReportData(null); // Reset when division changes
+                                    }}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700 bg-white"
+                                >
+                                    <option value="">Semua Divisi</option>
+                                    {divisiList.map(div => <option key={div} value={div}>{div}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex items-end">
+                                <button
+                                    onClick={handleGenerateMonthlyAIReport}
+                                    disabled={monthlyLoading || isGeneratingMonthly || filteredMonthlyRecords.length === 0}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-md hover:shadow-lg active:scale-98 transition-all text-xs disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
+                                >
+                                    <Sparkles size={15} className={isGeneratingMonthly ? "animate-spin" : ""} />
+                                    <span>{isGeneratingMonthly ? "Menganalisis..." : "Hasilkan Ringkasan Eksekutif AI"}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Statistics Cards for Selected Month */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Card Total */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Kehadiran</span>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-slate-800">{filteredMonthlyRecords.length}</span>
+                                <span className="text-[10px] text-slate-400 font-bold">LOGS</span>
+                            </div>
+                        </div>
+                        {/* Card On-Time */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider block mb-1">Tepat Waktu</span>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-emerald-600">
+                                    {filteredMonthlyRecords.filter(r => r.status === 'Hadir').length}
+                                </span>
+                                <span className="text-[10px] text-emerald-400 font-bold">KALI</span>
+                            </div>
+                        </div>
+                        {/* Card Late */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider block mb-1">Terlambat</span>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-rose-600">
+                                    {filteredMonthlyRecords.filter(r => r.status === 'Terlambat').length}
+                                </span>
+                                <span className="text-[10px] text-rose-400 font-bold">KALI</span>
+                            </div>
+                        </div>
+                        {/* Card Sick/Leave */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider block mb-1">Izin / Sakit / Alpa</span>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-amber-600">
+                                    {filteredMonthlyRecords.filter(r => ['Izin', 'Sakit', 'Alpa'].includes(r.status)).length}
+                                </span>
+                                <span className="text-[10px] text-amber-400 font-bold">KALI</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Main Content Pane */}
+                    {monthlyLoading ? (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
+                            <div className="flex flex-col items-center justify-center space-y-3">
+                                <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                <p className="text-sm font-semibold text-slate-500">Memuat rekap data kehadiran bulan ini...</p>
+                            </div>
+                        </div>
+                    ) : filteredMonthlyRecords.length === 0 ? (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
+                            <p className="font-bold text-slate-700 text-base">Tidak ada data kehadiran</p>
+                            <p className="text-xs text-slate-400 mt-1">Belum ada log kehadiran terekam untuk rentang saringan di bulan ini.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            {/* Executive Summary Column */}
+                            <div className="lg:col-span-7 space-y-6">
+                                <div className="bg-gradient-to-br from-slate-900 to-slate-850 text-white rounded-2xl p-6 shadow-md border border-slate-800 relative overflow-hidden flex flex-col justify-between min-h-[400px]">
+                                    <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+                                        <Sparkles size={160} />
+                                    </div>
+                                    
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20">
+                                                <Sparkles size={16} />
+                                            </div>
+                                            <span className="text-xs font-extrabold text-blue-400 uppercase tracking-widest">Ringkasan Eksekutif AI</span>
+                                        </div>
+
+                                        {monthlyReportData ? (
+                                            <div className="space-y-4 text-slate-300 text-sm leading-relaxed">
+                                                <div className="bg-white/5 rounded-xl p-4 border border-white/10 mb-4 flex items-center justify-between">
+                                                    <div>
+                                                        <span className="text-[10px] uppercase font-semibold text-slate-400 block">Kepatuhan Bulanan</span>
+                                                        <span className="text-lg font-black text-emerald-400">{monthlyReportData.summary?.complianceRate || "0%"}</span>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <span className="text-[10px] uppercase font-semibold text-slate-400 block">Tepat Waktu vs Terlambat</span>
+                                                        <span className="text-sm font-bold text-white">
+                                                            {monthlyReportData.summary?.totalOnTime || 0} / {monthlyReportData.summary?.totalLate || 0}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="prose prose-invert max-w-none text-slate-200">
+                                                    {(monthlyReportData.summary?.summaryComments || "")
+                                                        .split('\n')
+                                                        .map((line: string, i: number) => {
+                                                            if (!line.trim()) return <div key={i} className="h-2"></div>;
+                                                            return <p key={i} className="mb-2 text-xs md:text-sm">{line}</p>;
+                                                        })
+                                                    }
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="py-12 text-center text-slate-400 space-y-4">
+                                                <p className="text-sm">Ringkasan Eksekutif AI belum dihasilkan untuk kriteria saringan di bulan ini.</p>
+                                                <p className="text-xs text-slate-500">Klik tombol &quot;Hasilkan Ringkasan Eksekutif AI&quot; di atas untuk memulai analisis cerdas.</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {monthlyReportData && (
+                                        <div className="border-t border-white/10 pt-4 mt-6 flex flex-wrap gap-2 justify-end">
+                                            <button
+                                                onClick={handlePrintMonthlyReport}
+                                                className="flex items-center gap-2 px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs transition-all cursor-pointer"
+                                            >
+                                                <Printer size={13} />
+                                                <span>Cetak Laporan (PDF)</span>
+                                            </button>
+                                            <button
+                                                onClick={handleDownloadMonthlyCSV}
+                                                className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all cursor-pointer shadow-md shadow-blue-500/20"
+                                            >
+                                                <Download size={13} />
+                                                <span>Ekspor Laporan (CSV)</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Printable preview Column */}
+                            <div className="lg:col-span-5">
+                                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 font-sans">
+                                            <Printer size={13} className="text-slate-400" /> Pratinjau Cetak Laporan
+                                        </h4>
+                                        <button 
+                                            onClick={handleExportMonthlyCSV}
+                                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-all cursor-pointer"
+                                        >
+                                            Ekspor CSV Mentah
+                                        </button>
+                                    </div>
+                                    
+                                    {monthlyReportData && monthlyReportData.htmlReport ? (
+                                        <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 shadow-inner max-h-[500px] overflow-y-auto">
+                                            <div className="p-4 bg-white scale-95 origin-top transform">
+                                                <div 
+                                                    className="text-xs text-slate-800 pointer-events-none"
+                                                    dangerouslySetInnerHTML={{ __html: monthlyReportData.htmlReport }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="border-2 border-dashed border-slate-200 rounded-xl p-12 text-center text-slate-400">
+                                            <p className="text-xs font-semibold">Pratinjau lembar cetak siap-pakai akan muncul di sini setelah AI menyelesaikan penyusunan analisis.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Edit Dialog Modal */}
             {editingRecord && (
