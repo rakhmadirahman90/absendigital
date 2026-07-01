@@ -96,12 +96,18 @@ export default function AbsensiTab() {
                 })
             });
 
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Gagal berkomunikasi dengan server AI');
+            const responseText = await response.text();
+            let data: any = {};
+            try {
+                data = responseText ? JSON.parse(responseText) : {};
+            } catch (parseErr) {
+                throw new Error('Respon server tidak valid (bukan JSON).');
             }
 
-            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Gagal berkomunikasi dengan server AI');
+            }
+
             if (!data.success) {
                 throw new Error('Gagal menghasilkan analisis laporan.');
             }
@@ -197,12 +203,18 @@ export default function AbsensiTab() {
                 body: JSON.stringify({ image: base64Image, currentDate: filterDate })
             });
 
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Gagal berkomunikasi dengan AI');
+            const responseText = await response.text();
+            let data: any = {};
+            try {
+                data = responseText ? JSON.parse(responseText) : {};
+            } catch (parseErr) {
+                throw new Error('Respon server tidak valid (bukan JSON).');
             }
 
-            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Gagal berkomunikasi dengan AI');
+            }
+
             if (!data.success || !data.records || data.records.length === 0) {
                 throw new Error('AI tidak menemukan data absensi dalam gambar tersebut. Pastikan teks terlihat jelas.');
             }
@@ -340,12 +352,18 @@ export default function AbsensiTab() {
                 })
             });
 
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Gagal berkomunikasi dengan server AI');
+            const responseText = await response.text();
+            let data: any = {};
+            try {
+                data = responseText ? JSON.parse(responseText) : {};
+            } catch (parseErr) {
+                throw new Error('Respon server tidak valid (bukan JSON).');
             }
 
-            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Gagal berkomunikasi dengan server AI');
+            }
+
             if (!data.success) {
                 throw new Error('Gagal menghasilkan analisis laporan.');
             }

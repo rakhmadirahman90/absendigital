@@ -38,12 +38,17 @@ export default function KaryawanTab() {
                 body: JSON.stringify({ image: base64Image })
             });
 
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Gagal berkomunikasi dengan layanan AI');
+            const responseText = await response.text();
+            let data: any = {};
+            try {
+                data = responseText ? JSON.parse(responseText) : {};
+            } catch (parseErr) {
+                throw new Error('Respon server tidak valid (bukan JSON).');
             }
 
-            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Gagal berkomunikasi dengan layanan AI');
+            }
             if (!data.success || !data.employees || data.employees.length === 0) {
                 throw new Error('AI tidak menemukan data karyawan dalam gambar tersebut. Pastikan teks atau tabel terlihat jelas.');
             }

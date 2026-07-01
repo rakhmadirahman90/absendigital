@@ -377,7 +377,11 @@ export default function CheckInOut() {
         clearTimeout(timeoutId);
         
         if (geoResponse.ok) {
-          const geoData = await geoResponse.json();
+          const geoText = await geoResponse.text();
+          let geoData: any = {};
+          try {
+            geoData = geoText ? JSON.parse(geoText) : {};
+          } catch (e) {}
           resolvedAddress = geoData.display_name || resolvedAddress;
         }
       } catch (err) {
@@ -392,12 +396,17 @@ export default function CheckInOut() {
           body: JSON.stringify({ image: rawImageSrc }),
         });
         
-        if (!verifyResponse.ok) {
-          const errData = await verifyResponse.json().catch(() => ({}));
-          throw new Error(`Gagal menghubungi server verifikasi wajah: ${errData.error || errData.reason || 'Sistem penolakan aktif.'}`);
+        const verifyText = await verifyResponse.text();
+        let verifyData: any = {};
+        try {
+          verifyData = verifyText ? JSON.parse(verifyText) : {};
+        } catch (parseErr) {
+          throw new Error('Respon server verifikasi wajah tidak valid (bukan JSON).');
         }
-        
-        const verifyData = await verifyResponse.json();
+
+        if (!verifyResponse.ok) {
+          throw new Error(`Gagal menghubungi server verifikasi wajah: ${verifyData.error || verifyData.reason || 'Sistem penolakan aktif.'}`);
+        }
         if (!verifyData.success || !verifyData.is_valid) {
           throw new Error(`Verifikasi Wajah Gagal: ${verifyData.reason || 'Wajah manusia tidak terdeteksi secara aktif.'}`);
         }

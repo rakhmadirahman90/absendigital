@@ -47,12 +47,18 @@ export default function PengaturanTab() {
         body: JSON.stringify({ image: base64Image })
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Gagal berkomunikasi dengan AI');
+      const responseText = await response.text();
+      let resData: any = {};
+      try {
+        resData = responseText ? JSON.parse(responseText) : {};
+      } catch (parseErr) {
+        throw new Error('Respon server tidak valid (bukan JSON).');
       }
 
-      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Gagal berkomunikasi dengan AI');
+      }
+
       if (!resData.success || !resData.data) {
         throw new Error('AI tidak berhasil mengekstrak data lokasi dari dokumen/screenshot ini.');
       }
