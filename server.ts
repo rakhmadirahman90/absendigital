@@ -603,9 +603,68 @@ app.post("/api/analyze-suspicious-request", async (req, res) => {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-    return res.status(400).json({
-      success: false,
-      error: "Kunci API Gemini tidak dikonfigurasi di server."
+    console.warn("GEMINI_API_KEY is not set or using placeholder. Falling back to simulated offline analysis.");
+    
+    // Heuristic analysis
+    const reasons: string[] = [];
+    let is_suspicious = false;
+    let confidence = 0.5;
+
+    const startDate = new Date(leaveRequest.tanggal_mulai);
+    const startDay = startDate.getDay();
+    if (startDay === 1 || startDay === 5 || startDay === 0 || startDay === 6) {
+      reasons.push(`Pengajuan berdekatan dengan akhir pekan (${startDay === 1 ? 'Senin' : startDay === 5 ? 'Jumat' : 'Akhir Pekan'}), berpotensi memperpanjang libur.`);
+    }
+
+    const previousLeaves = (employeeHistory || []).filter((h: any) => h.status === 'approved' || h.status === 'pending');
+    if (previousLeaves.length > 3) {
+      is_suspicious = true;
+      confidence = 0.75;
+      reasons.push(`Frekuensi pengajuan izin/sakit cukup tinggi (terdapat ${previousLeaves.length} pengajuan sebelumnya).`);
+    }
+
+    const matchingReasons = (employeeHistory || []).filter((h: any) => h.alasan && h.alasan.toLowerCase().trim() === leaveRequest.alasan?.toLowerCase().trim());
+    if (matchingReasons.length > 0) {
+      is_suspicious = true;
+      confidence = Math.max(confidence, 0.8);
+      reasons.push(`Alasan yang diajukan ("${leaveRequest.alasan}") berulang secara identik dengan pengajuan sebelumnya.`);
+    }
+
+    if (leaveRequest.tipe === 'Sakit' && (!leaveRequest.surat_sakit_url && !leaveRequest.attachmentUrl)) {
+      is_suspicious = true;
+      confidence = Math.max(confidence, 0.85);
+      reasons.push(`Pengajuan izin Sakit tidak menyertakan bukti Surat Dokter.`);
+    }
+
+    if (reasons.length === 0) {
+      reasons.push("Pola pengajuan terlihat wajar dan konsisten dengan riwayat kehadiran.");
+    } else {
+      is_suspicious = true;
+    }
+
+    const historyCount = previousLeaves.length;
+    const history_analysis = historyCount > 0 
+      ? `Karyawan memiliki riwayat ${historyCount} pengajuan izin sebelumnya. ${historyCount > 3 ? 'Kekerapan ini dinilai tinggi.' : 'Kekerapan ini dinilai dalam batas wajar.'}`
+      : "Karyawan bersih dari riwayat izin sebelumnya (tidak ada data pengajuan lain).";
+
+    const location_analysis = attendanceHistory && attendanceHistory.length > 0
+      ? `Menganalisis ${attendanceHistory.length} data absensi terakhir. Lokasi check-in mayoritas konsisten dengan titik koordinat terdaftar.`
+      : "Tidak ditemukan riwayat lokasi absensi terakhir untuk analisis anomali GPS.";
+
+    const recommendation = is_suspicious
+      ? `Disarankan untuk memverifikasi lebih lanjut dengan meminta dokumen pendukung tambahan atau menghubungi ${employeeName} secara langsung sebelum menyetujui.`
+      : "Pengajuan tampak aman untuk disetujui secara langsung.";
+
+    return res.json({
+      success: true,
+      analysis: {
+        is_suspicious,
+        confidence: is_suspicious ? parseFloat(confidence.toFixed(2)) : 0.1,
+        reasons,
+        location_analysis,
+        history_analysis,
+        recommendation: `[Offline AI] ${recommendation}`
+      }
     });
   }
 

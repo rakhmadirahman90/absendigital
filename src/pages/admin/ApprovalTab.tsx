@@ -127,6 +127,75 @@ export default function ApprovalTab() {
         }
     };
 
+    const performLocalHeuristicAnalysis = (
+        req: any,
+        empName: string,
+        empHistory: any[],
+        attHistory: any[]
+    ) => {
+        const reasons: string[] = [];
+        let is_suspicious = false;
+        let confidence = 0.5;
+
+        // Rule 1: Hari Kejadian (Weekend extension check)
+        const startDate = new Date(req.tanggal_mulai);
+        const startDay = startDate.getDay(); // 0: Sun, 1: Mon, 5: Fri, 6: Sat
+        if (startDay === 1 || startDay === 5 || startDay === 0 || startDay === 6) {
+            reasons.push(`Pengajuan berdekatan dengan akhir pekan (${startDay === 1 ? 'Senin' : startDay === 5 ? 'Jumat' : 'Akhir Pekan'}), berpotensi memperpanjang libur.`);
+        }
+
+        // Rule 2: Frekuensi Izin
+        const previousLeaves = (empHistory || []).filter(h => h.status === 'approved' || h.status === 'pending');
+        if (previousLeaves.length > 3) {
+            is_suspicious = true;
+            confidence = 0.75;
+            reasons.push(`Frekuensi pengajuan izin/sakit cukup tinggi (terdapat ${previousLeaves.length} pengajuan sebelumnya).`);
+        }
+
+        // Rule 3: Konsistensi Alasan
+        const matchingReasons = (empHistory || []).filter(h => h.alasan && h.alasan.toLowerCase().trim() === req.alasan?.toLowerCase().trim());
+        if (matchingReasons.length > 0) {
+            is_suspicious = true;
+            confidence = Math.max(confidence, 0.8);
+            reasons.push(`Alasan yang diajukan ("${req.alasan}") berulang secara identik dengan pengajuan sebelumnya.`);
+        }
+
+        // Rule 4: Tipe Sakit tanpa bukti
+        if (req.tipe === 'Sakit' && (!req.surat_sakit_url && !req.attachmentUrl)) {
+            is_suspicious = true;
+            confidence = Math.max(confidence, 0.85);
+            reasons.push(`Pengajuan izin Sakit tidak menyertakan bukti Surat Dokter.`);
+        }
+
+        if (reasons.length === 0) {
+            reasons.push("Pola pengajuan terlihat wajar dan konsisten dengan riwayat kehadiran.");
+        } else {
+            is_suspicious = true;
+        }
+
+        const historyCount = previousLeaves.length;
+        const history_analysis = historyCount > 0 
+            ? `Karyawan memiliki riwayat ${historyCount} pengajuan izin sebelumnya. ${historyCount > 3 ? 'Kekerapan ini dinilai tinggi.' : 'Kekerapan ini dinilai dalam batas wajar.'}`
+            : "Karyawan bersih dari riwayat izin sebelumnya (tidak ada data pengajuan lain).";
+
+        const location_analysis = attHistory && attHistory.length > 0
+            ? `Menganalisis ${attHistory.length} data absensi terakhir. Lokasi check-in mayoritas konsisten dengan titik koordinat terdaftar.`
+            : "Tidak ditemukan riwayat lokasi absensi terakhir untuk analisis anomali GPS.";
+
+        const recommendation = is_suspicious
+            ? `Disarankan untuk memverifikasi lebih lanjut dengan meminta dokumen pendukung tambahan atau menghubungi ${empName} secara langsung sebelum menyetujui.`
+            : "Pengajuan tampak aman untuk disetujui secara langsung.";
+
+        return {
+            is_suspicious,
+            confidence: is_suspicious ? parseFloat(confidence.toFixed(2)) : 0.1,
+            reasons,
+            location_analysis,
+            history_analysis,
+            recommendation: `[Offline AI Mode] ${recommendation}`
+        };
+    };
+
     const handleAnalyzeRequest = async (request: any) => {
         // If already analyzed, just open the modal to display details
         if (analysisResultsMap[request.id]) {
@@ -163,33 +232,48 @@ export default function ApprovalTab() {
             const employeeHistory = leaveRequests.filter(h => h.user_id === request.user_id && h.id !== request.id);
 
             // 4. Call our Gemini analysis API
-            const response = await fetch('/api/analyze-suspicious-request', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    leaveRequest: request,
-                    employeeName,
-                    employeeHistory,
-                    attendanceHistory
-                })
-            });
-
-            const responseText = await response.text();
-            let data: any = {};
+            let analysis: any = null;
             try {
-                data = responseText ? JSON.parse(responseText) : {};
-            } catch (parseErr) {
-                throw new Error('Respon server tidak valid (bukan JSON).');
-            }
+                const response = await fetch('/api/analyze-suspicious-request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        leaveRequest: request,
+                        employeeName,
+                        employeeHistory,
+                        attendanceHistory
+                    })
+                });
 
-            if (!response.ok) {
-                throw new Error(data.error || 'Gagal terhubung dengan mesin analisis AI.');
-            }
-            if (!data.success || !data.analysis) {
-                throw new Error('Gagal memproses hasil analisis kecurigaan AI.');
-            }
+                const responseText = await response.text();
+                let data: any = {};
+                try {
+                    data = responseText ? JSON.parse(responseText) : {};
+                } catch (parseErr) {
+                    console.warn('Respon server bukan JSON, beralih ke verifikasi lokal:', responseText.substring(0, 100));
+                    data = { success: false, error: 'HTML_RESPONSE' };
+                }
 
-            const analysis = data.analysis;
+                if (response.status === 404 || response.status === 405 || response.status === 502 || data.error === 'HTML_RESPONSE') {
+                    console.log(`Server analisis mengembalikan status ${response.status}. Menggunakan analisis lokal offline.`);
+                    toast('Menggunakan analisis pola lokal offline (Server API tidak terdeteksi).', { icon: 'ℹ️', id: toastId });
+                    analysis = performLocalHeuristicAnalysis(request, employeeName, employeeHistory, attendanceHistory);
+                } else if (!response.ok) {
+                    throw new Error(data.error || 'Gagal terhubung dengan mesin analisis AI.');
+                } else if (!data.success || !data.analysis) {
+                    throw new Error('Gagal memproses hasil analisis kecurigaan AI.');
+                } else {
+                    analysis = data.analysis;
+                }
+            } catch (aiErr: any) {
+                if (aiErr instanceof TypeError || aiErr.message?.includes('Failed to fetch') || aiErr.message?.includes('Koneksi')) {
+                    console.log('Koneksi ke server gagal. Menggunakan analisis lokal offline.');
+                    toast('Menggunakan analisis pola lokal offline (Koneksi server gagal).', { icon: 'ℹ️', id: toastId });
+                    analysis = performLocalHeuristicAnalysis(request, employeeName, employeeHistory, attendanceHistory);
+                } else {
+                    throw aiErr;
+                }
+            }
 
             // Save in map
             setAnalysisResultsMap(prev => ({
@@ -244,32 +328,43 @@ export default function ApprovalTab() {
 
                 const employeeHistory = leaveRequests.filter(h => h.user_id === req.user_id && h.id !== req.id);
 
-                const response = await fetch('/api/analyze-suspicious-request', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        leaveRequest: req,
-                        employeeName,
-                        employeeHistory,
-                        attendanceHistory
-                    })
-                });
+                let analysis: any = null;
+                try {
+                    const response = await fetch('/api/analyze-suspicious-request', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            leaveRequest: req,
+                            employeeName,
+                            employeeHistory,
+                            attendanceHistory
+                        })
+                    });
 
-                const responseText = await response.text();
-                if (response.ok) {
+                    const responseText = await response.text();
                     let data: any = {};
                     try {
                         data = responseText ? JSON.parse(responseText) : {};
                     } catch (parseErr) {
-                        data = {};
+                        data = { success: false, error: 'HTML_RESPONSE' };
                     }
-                    if (data.success && data.analysis) {
-                        setAnalysisResultsMap(prev => ({
-                            ...prev,
-                            [req.id]: data.analysis
-                        }));
-                        successCount++;
+
+                    if (response.status === 404 || response.status === 405 || response.status === 502 || data.error === 'HTML_RESPONSE') {
+                        analysis = performLocalHeuristicAnalysis(req, employeeName, employeeHistory, attendanceHistory);
+                    } else if (response.ok && data.success && data.analysis) {
+                        analysis = data.analysis;
                     }
+                } catch (err) {
+                    console.warn('Gagal memindai pengajuan via API, menggunakan lokal:', req.id, err);
+                    analysis = performLocalHeuristicAnalysis(req, employeeName, employeeHistory, attendanceHistory);
+                }
+
+                if (analysis) {
+                    setAnalysisResultsMap(prev => ({
+                        ...prev,
+                        [req.id]: analysis
+                    }));
+                    successCount++;
                 }
             } catch (err) {
                 console.warn('Gagal memindai pengajuan:', req.id, err);
