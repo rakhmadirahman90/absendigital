@@ -791,14 +791,27 @@ export default function CheckInOut() {
         </div>
       )}
 
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col items-center">
-        <div className="relative w-full max-w-sm aspect-[3/4] bg-slate-100 rounded-xl overflow-hidden mb-6">
+      <div className="bg-white/80 backdrop-blur-md p-6 md:p-8 rounded-3xl border border-slate-200/80 shadow-[0_15px_35px_-12px_rgba(37,99,235,0.08)] overflow-hidden flex flex-col items-center relative">
+        {/* Luxury Corner Motif Accents */}
+        <div className="absolute top-0 left-0 w-16 h-16 opacity-10 pointer-events-none">
+          <svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" stroke="#2563EB" strokeWidth="2">
+            <path d="M 0,0 L 30,30 M 10,0 L 40,30 M 0,10 L 30,40" />
+            <rect x="32" y="32" width="10" height="10" stroke="#0EA5E9" strokeWidth="1" strokeDasharray="2" />
+          </svg>
+        </div>
+        <div className="absolute bottom-0 right-0 w-16 h-16 opacity-10 pointer-events-none">
+          <svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" stroke="#0EA5E9" strokeWidth="2">
+            <path d="M 100,100 L 70,70 M 90,100 L 60,70 M 100,90 L 70,60" />
+            <rect x="58" y="58" width="10" height="10" stroke="#2563EB" strokeWidth="1" strokeDasharray="2" />
+          </svg>
+        </div>
+
+        <div className="relative w-full max-w-sm aspect-[3/4] bg-slate-950 rounded-2xl overflow-hidden mb-8 shadow-[0_10px_30px_rgba(15,23,42,0.15)] border-4 border-white/90 ring-1 ring-slate-200 group">
           {/* @ts-ignore */}
           <Webcam
             audio={false}
             ref={webcamRef}
             screenshotFormat="image/jpeg"
-            screenshotWidth={640}
             videoConstraints={{ facingMode }}
             className="object-cover w-full h-full"
             playsInline={true}
@@ -806,59 +819,69 @@ export default function CheckInOut() {
             muted={true}
           />
           
+          {/* Subtle Overlay Guide Pattern */}
+          <div className="absolute inset-0 border-2 border-dashed border-white/20 rounded-xl pointer-events-none m-4 flex items-center justify-center">
+            <div className="w-48 h-48 rounded-full border border-dashed border-white/30 flex items-center justify-center">
+              <div className="w-40 h-40 rounded-full border border-dashed border-white/10"></div>
+            </div>
+          </div>
+          
           {/* Switch Camera Button */}
           <button
             type="button"
             onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
-            className="absolute top-4 right-4 bg-black/60 hover:bg-black/85 active:scale-95 text-white px-3 py-2 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-all border border-white/20 backdrop-blur-sm cursor-pointer hover:shadow-lg shadow-black/20"
+            className="absolute top-4 right-4 bg-slate-900/80 hover:bg-slate-900 text-white px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-[11px] font-bold transition-all border border-white/10 backdrop-blur-md cursor-pointer shadow-lg active:scale-95 z-20"
           >
-            <RefreshCw size={13} className="animate-pulse" />
+            <RefreshCw size={12} className="text-sky-400" />
             <span>{facingMode === 'user' ? 'Kamera Belakang' : 'Kamera Depan'}</span>
           </button>
 
-          <div className="absolute bottom-4 left-0 right-0 flex justify-center text-white">
-            <div className="bg-black/50 px-3 py-1.5 rounded-full flex items-center space-x-2 text-sm backdrop-blur-sm">
-              <Camera size={16} />
-              <span>Posisikan wajah Anda di tengah</span>
+          <div className="absolute bottom-4 left-0 right-0 flex justify-center text-white px-4 z-20">
+            <div className="bg-slate-900/90 px-4 py-2 rounded-full flex items-center space-x-2 text-xs font-semibold backdrop-blur-md border border-white/10 shadow-lg shadow-black/25">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+              <Camera size={14} className="text-sky-400" />
+              <span>Posisikan wajah di tengah bingkai</span>
             </div>
           </div>
         </div>
 
         {message && (
-          <div className="w-full mb-6 p-4 bg-emerald-50 text-emerald-700 rounded-xl flex items-center space-x-3">
-            <CheckCircle2 size={20} />
-            <span className="font-medium">{message}</span>
+          <div className="w-full max-w-sm mb-6 p-4 bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-2xl flex items-center space-x-3 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+            <span className="font-bold text-xs leading-relaxed">{message}</span>
           </div>
         )}
 
         {error && (
-          <div className="w-full mb-6 p-4 bg-red-50 text-red-700 rounded-xl flex items-center space-x-3">
-            <AlertCircle size={20} />
-            <span className="font-medium">{error}</span>
+          <div className="w-full max-w-sm mb-6 p-4 bg-rose-50 border border-rose-100 text-rose-800 rounded-2xl flex items-center space-x-3 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <AlertCircle size={18} className="text-rose-600 shrink-0" />
+            <span className="font-bold text-xs leading-relaxed">{error}</span>
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
+        <div className="grid grid-cols-2 gap-4 w-full max-w-sm relative z-10">
           <button
             onClick={() => captureAndLocate('checkin')}
             disabled={loading}
-            className="flex flex-col items-center justify-center p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-colors"
+            className="group/btn flex flex-col items-center justify-center p-4 bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 active:scale-[0.98] text-white rounded-2xl shadow-md hover:shadow-lg hover:shadow-blue-600/15 disabled:opacity-50 transition-all duration-300 cursor-pointer"
           >
-            <span className="font-bold text-lg">MASUK</span>
+            <span className="text-[10px] uppercase tracking-widest font-extrabold text-blue-100">Presensi</span>
+            <span className="font-display font-extrabold text-lg tracking-wide mt-0.5 group-hover/btn:scale-105 transition-transform">MASUK</span>
           </button>
           
           <button
             onClick={() => captureAndLocate('checkout')}
             disabled={loading}
-            className="flex flex-col items-center justify-center p-4 bg-slate-800 text-white rounded-xl hover:bg-slate-900 active:bg-black disabled:opacity-50 transition-colors"
+            className="group/btn flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-800 to-slate-900 hover:from-slate-900 hover:to-black active:scale-[0.98] text-white rounded-2xl shadow-md hover:shadow-lg hover:shadow-slate-800/15 disabled:opacity-50 transition-all duration-300 cursor-pointer border border-slate-700/30"
           >
-            <span className="font-bold text-lg">PULANG</span>
+            <span className="text-[10px] uppercase tracking-widest font-extrabold text-slate-300">Presensi</span>
+            <span className="font-display font-extrabold text-lg tracking-wide mt-0.5 group-hover/btn:scale-105 transition-transform">PULANG</span>
           </button>
         </div>
         
-        <p className="text-xs text-slate-500 mt-6 text-center max-w-xs flex items-center space-x-1 justify-center">
-          <MapPin size={12} />
-          <span>Lokasi dan foto akan dicatat saat absensi.</span>
+        <p className="text-[11px] text-slate-400 mt-6 text-center max-w-xs flex items-center space-x-1.5 justify-center font-medium">
+          <MapPin size={12} className="text-blue-500" />
+          <span>Lokasi GPS & foto selfie Anda akan divalidasi sistem.</span>
         </p>
       </div>
     </div>

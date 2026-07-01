@@ -1,0 +1,329 @@
+<svg 
+  viewBox="0 0 500 500" 
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <!-- Rich Metallic Gradients -->
+    <radialGradient id="shieldBg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="60%" stop-color="#0b1329" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffe082" />
+      <stop offset="30%" stop-color="#fbbf24" />
+      <stop offset="70%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#92400e" />
+    </linearGradient>
+
+    <linearGradient id="silverGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="30%" stop-color="#e2e8f0" />
+      <stop offset="75%" stop-color="#94a3b8" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+
+    <linearGradient id="bronzeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="50%" stop-color="#d97706" />
+      <stop offset="100%" stop-color="#78350f" />
+    </linearGradient>
+    
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="25%" stop-color="#94a3b8" />
+      <stop offset="50%" stop-color="#3b4f6b" />
+      <stop offset="75%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#ffffff" />
+    </linearGradient>
+
+    <linearGradient id="shuttlecockGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="80%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#cbd5e1" />
+    </linearGradient>
+
+    <filter id="3dShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#020617" flood-opacity="0.8" />
+    </filter>
+  </defs>
+
+  <!-- 1. Main Shield Badge Outer Layer -->
+  <path 
+    d="M 250,15 
+       C 340,15 410,35 440,75 
+       C 455,115 425,145 445,185 
+       C 465,225 450,295 420,345 
+       C 380,405 320,455 250,485 
+       C 180,455 120,405 80,345 
+       C 50,295 35,225 55,185 
+       C 75,145 45,115 60,75 
+       C 90,35 160,15 250,15 Z" 
+    fill="url(#shieldBg)" 
+    stroke="url(#borderGrad)" 
+    stroke-width="12" 
+    stroke-linejoin="round"
+    filter="url(#3dShadow)"
+  />
+  
+  <!-- Inner Metallic Blue Border Segment -->
+  <path 
+    d="M 250,25 
+       C 330,25 398,43 426,79 
+       C 439,115 411,142 430,179 
+       C 449,215 435,280 408,328 
+       C 370,383 314,431 250,461 
+       C 186,431 130,383 92,328 
+       C 65,280 51,215 70,179 
+       C 89,142 61,115 74,79 
+       C 102,43 170,25 250,25 Z" 
+    fill="none" 
+    stroke="#1e293b" 
+    stroke-width="3" 
+    opacity="0.9"
+  />
+
+  <path 
+    d="M 250,29 
+       C 324,29 388,46 415,81 
+       C 427,115 401,141 419,176 
+       C 437,211 424,272 398,318 
+       C 362,371 308,417 250,446 
+       C 192,417 138,371 102,318 
+       C 76,272 63,211 81,176 
+       C 99,141 73,115 85,81 
+       C 112,46 176,29 250,29 Z" 
+    fill="none" 
+    stroke="url(#silverGrad)" 
+    stroke-width="1.5" 
+    opacity="0.6"
+  />
+
+  <!-- 2. Crossed Badminton Rackets -->
+  <g opacity="0.85">
+    <!-- Racket Shafts -->
+    <line x1="145" y1="235" x2="355" y2="85" stroke="url(#silverGrad)" stroke-width="6" stroke-linecap="round" />
+    <line x1="355" y1="235" x2="145" y2="85" stroke="url(#silverGrad)" stroke-width="6" stroke-linecap="round" />
+    
+    <!-- Gold Wrappings / Grips at bottom -->
+    <line x1="145" y1="235" x2="185" y2="207" stroke="url(#goldGrad)" stroke-width="8.5" stroke-linecap="round" />
+    <line x1="355" y1="235" x2="315" y2="207" stroke="url(#goldGrad)" stroke-width="8.5" stroke-linecap="round" />
+
+    <!-- Racket Heads (Ovals) -->
+    <ellipse cx="355" cy="85" rx="34" ry="44" transform="rotate(22 355 85)" fill="none" stroke="url(#silverGrad)" stroke-width="5" />
+    <ellipse cx="145" cy="85" rx="34" ry="44" transform="rotate(-22 145 85)" fill="none" stroke="url(#silverGrad)" stroke-width="5" />
+
+    <!-- Dynamic Net Grids -->
+    <path d="M 330,73 L 372,105 M 338,62 L 380,94 M 346,51 L 388,83 M 326,90 L 368,122 M 367,59 L 333,99 M 375,70 L 341,110 M 383,81 L 349,121 M 359,48 L 325,88" stroke="#475569" stroke-width="1" stroke-dasharray="2 1" />
+    <path d="M 125,73 L 167,105 M 133,62 L 175,94 M 141,51 L 183,83 M 117,90 L 159,122 M 162,99 L 128,59 M 170,110 L 136,70 M 178,121 L 144,81 M 154,88 L 120,48" stroke="#475569" stroke-width="1" stroke-dasharray="2 1" />
+  </g>
+
+  <!-- 3. Shuttlecocks (Left & Right) -->
+  <!-- Left Shuttlecock -->
+  <g transform="translate(112, 160) rotate(-18) scale(0.68)">
+    <!-- Feathers -->
+    <path d="M -25,-42 Q -30,-22 -18,0 L 18,0 Q 30,-22 25,-42" fill="url(#shuttlecockGrad)" stroke="#94a3b8" stroke-width="1.5" />
+    <line x1="-15" y1="-42" x2="-8" y2="0" stroke="#cbd5e1" stroke-width="1" />
+    <line x1="-5" y1="-42" x2="-3" y2="0" stroke="#cbd5e1" stroke-width="1" />
+    <line x1="5" y1="-42" x2="3" y2="0" stroke="#cbd5e1" stroke-width="1" />
+    <line x1="15" y1="-42" x2="8" y2="0" stroke="#cbd5e1" stroke-width="1" />
+    <!-- Blue Ribbon strip -->
+    <path d="M -18,-12 L 18,-12" stroke="#1d4ed8" stroke-width="4" />
+    <!-- Cork -->
+    <path d="M -18,0 C -18,15 18,15 18,0 Z" fill="url(#silverGrad)" stroke="#475569" stroke-width="1" />
+  </g>
+  
+  <!-- Right Shuttlecock -->
+  <g transform="translate(388, 160) rotate(18) scale(0.68)">
+    <!-- Feathers -->
+    <path d="M -25,-42 Q -30,-22 -18,0 L 18,0 Q 30,-22 25,-42" fill="url(#shuttlecockGrad)" stroke="#94a3b8" stroke-width="1.5" />
+    <line x1="-15" y1="-42" x2="-8" y2="0" stroke="#cbd5e1" stroke-width="1" />
+    <line x1="-5" y1="-42" x2="-3" y2="0" stroke="#cbd5e1" stroke-width="1" />
+    <line x1="5" y1="-42" x2="3" y2="0" stroke="#cbd5e1" stroke-width="1" />
+    <line x1="15" y1="-42" x2="8" y2="0" stroke="#cbd5e1" stroke-width="1" />
+    <!-- Blue Ribbon strip -->
+    <path d="M -18,-12 L 18,-12" stroke="#1d4ed8" stroke-width="4" />
+    <!-- Cork -->
+    <path d="M -18,0 C -18,15 18,15 18,0 Z" fill="url(#silverGrad)" stroke="#475569" stroke-width="1" />
+  </g>
+
+  <!-- 4. Five Gold and Silver Stars (Arched Layout) -->
+  <g>
+    <!-- Star 1 (Center - Large Gold) -->
+    <polygon points="250,38 254,48 265,48 256,54 260,64 250,58 240,64 244,54 235,48 246,48" fill="url(#goldGrad)" filter="url(#3dShadow)" />
+    <!-- Star 2 (Left-Center Silver) -->
+    <polygon points="214,46 217,54 225,54 218,59 221,67 214,62 207,67 210,59 203,54 211,54" fill="url(#silverGrad)" />
+    <!-- Star 3 (Right-Center Silver) -->
+    <polygon points="286,46 289,54 297,54 290,59 293,67 286,62 279,67 282,59 275,54 283,54" fill="url(#silverGrad)" />
+    <!-- Star 4 (Lower Left Silver) -->
+    <polygon points="232,68 234.5,74 241,74 236,78 238.5,84 232,80 225.5,84 228,78 223,74 229.5,74" fill="url(#silverGrad)" opacity="0.85" />
+    <!-- Star 5 (Lower Right Silver) -->
+    <polygon points="268,68 270.5,74 277,74 272,78 274.5,84 268,80 261.5,84 264,78 259,74 265.5,74" fill="url(#silverGrad)" opacity="0.85" />
+  </g>
+
+  <!-- 5. Metallic Text: "US" (Golden) -->
+  <g filter="url(#3dShadow)">
+    <text x="250" y="145" text-anchor="middle" fill="#020617" font-weight="900" font-size="48" font-family="sans-serif" letter-spacing="1">US</text>
+    <text x="250" y="145" text-anchor="middle" fill="url(#goldGrad)" stroke="#78350f" stroke-width="4.5" stroke-linejoin="round" font-weight="900" font-size="48" font-family="sans-serif" letter-spacing="1">US</text>
+    <text x="250" y="145" text-anchor="middle" fill="#ffffff" font-weight="900" font-size="48" font-family="sans-serif" letter-spacing="1" opacity="0.25">US</text>
+  </g>
+
+  <!-- 6. Main Header Text: "BILIBILI" (3D Metallic Silver with Blue and Gold Accents) -->
+  <g filter="url(#3dShadow)">
+    <text x="250" y="212" text-anchor="middle" fill="#020617" stroke="#020617" stroke-width="14" stroke-linejoin="round" font-weight="900" font-size="56" font-family="sans-serif" letter-spacing="2.5">BILIBILI</text>
+    <text x="250" y="212" text-anchor="middle" fill="url(#goldGrad)" stroke="url(#goldGrad)" stroke-width="6.5" stroke-linejoin="round" font-weight="900" font-size="56" font-family="sans-serif" letter-spacing="2.5">BILIBILI</text>
+    <text x="250" y="212" text-anchor="middle" fill="#0b1329" stroke="#0b1329" stroke-width="2.5" stroke-linejoin="round" font-weight="900" font-size="56" font-family="sans-serif" letter-spacing="2.5">BILIBILI</text>
+    <text x="250" y="212" text-anchor="middle" fill="url(#silverGrad)" font-weight="900" font-size="56" font-family="sans-serif" letter-spacing="2.5">BILIBILI</text>
+    <text x="250" y="209" text-anchor="middle" fill="#ffffff" font-weight="900" font-size="56" font-family="sans-serif" letter-spacing="2.5" opacity="0.35">BILIBILI</text>
+  </g>
+
+  <!-- 7. Starry Flank Badge & "162" Text -->
+  <g filter="url(#3dShadow)">
+    <line x1="125" y1="250" x2="190" y2="250" stroke="url(#goldGrad)" stroke-width="4" stroke-linecap="round" />
+    <line x1="310" y1="250" x2="375" y2="250" stroke="url(#goldGrad)" stroke-width="4" stroke-linecap="round" />
+    <text x="250" y="260" text-anchor="middle" fill="#020617" stroke="#020617" stroke-width="6.5" stroke-linejoin="round" font-weight="900" font-size="36" font-family="sans-serif" letter-spacing="1.5">162</text>
+    <text x="250" y="260" text-anchor="middle" fill="url(#goldGrad)" stroke="#78350f" stroke-width="1.5" stroke-linejoin="round" font-weight="900" font-size="36" font-family="sans-serif" letter-spacing="1.5">162</text>
+  </g>
+
+  <!-- 8. Central Warehouse Building -->
+  <g transform="translate(195, 275)" filter="url(#3dShadow)">
+    <polygon points="0,32 55,0 110,32" fill="#0b1329" stroke="url(#silverGrad)" stroke-width="2.5" stroke-linejoin="round" />
+    <polygon points="10,29 55,5 100,29" fill="#1e293b" opacity="0.5" />
+    <rect x="8" y="32" width="94" height="54" fill="#0f172a" stroke="url(#silverGrad)" stroke-width="2.5" stroke-linejoin="round" />
+    <rect x="34" y="44" width="42" height="42" fill="#020617" stroke="url(#goldGrad)" stroke-width="2" />
+    <g opacity="0.95">
+      <rect x="40" y="68" width="30" height="8" rx="2" fill="#f59e0b" stroke="#78350f" stroke-width="0.8" />
+      <rect x="38" y="76" width="34" height="10" rx="2.5" fill="#fbbf24" stroke="#78350f" stroke-width="0.8" />
+      <rect x="42" y="60" width="26" height="8" rx="2" fill="#d97706" stroke="#78350f" stroke-width="0.8" />
+      <rect x="45" y="52" width="20" height="8" rx="1.8" fill="#f59e0b" stroke="#78350f" stroke-width="0.8" />
+      <line x1="55" y1="52" x2="55" y2="86" stroke="#92400e" stroke-width="1" />
+    </g>
+    <rect x="18" y="44" width="16" height="42" fill="url(#shieldBg)" stroke="url(#silverGrad)" stroke-width="1.5" stroke-linejoin="round" />
+    <rect x="76" y="44" width="16" height="42" fill="url(#shieldBg)" stroke="url(#silverGrad)" stroke-width="1.5" stroke-linejoin="round" />
+    <line x1="18" y1="44" x2="34" y2="86" stroke="url(#silverGrad)" stroke-width="1" />
+    <line x1="76" y1="44" x2="92" y2="86" stroke="url(#silverGrad)" stroke-width="1" />
+  </g>
+
+  <!-- 9. Golden Rice Stalk (Left Side) -->
+  <g transform="translate(105, 345) rotate(-10) scale(1.15)" filter="url(#3dShadow)">
+    <path d="M 0,0 C -18,-35 -10,-75 14,-100" fill="none" stroke="url(#goldGrad)" stroke-width="5.5" stroke-linecap="round" />
+    <path d="M 0,0 C -18,-35 -10,-75 14,-100" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.4" stroke-linecap="round" />
+    <g stroke="#78350f" stroke-width="1">
+      <ellipse cx="-4" cy="-24" rx="6" ry="8.5" transform="rotate(-30 -4 -24)" fill="url(#goldGrad)" />
+      <ellipse cx="-13" cy="-44" rx="6.5" ry="9" transform="rotate(-35 -13 -44)" fill="url(#goldGrad)" />
+      <ellipse cx="-15" cy="-64" rx="6.5" ry="9" transform="rotate(-25 -15 -64)" fill="url(#goldGrad)" />
+      <ellipse cx="-7" cy="-84" rx="6" ry="8.5" transform="rotate(-15 -7 -84)" fill="url(#goldGrad)" />
+      <ellipse cx="6" cy="-98" rx="5.5" ry="8" transform="rotate(5 6 -98)" fill="url(#goldGrad)" />
+      <ellipse cx="6" cy="-33" rx="5.5" ry="8" transform="rotate(15 6 -33)" fill="url(#goldGrad)" />
+      <ellipse cx="0" cy="-53" rx="6" ry="8.5" transform="rotate(10 0 -53)" fill="url(#goldGrad)" />
+      <ellipse cx="-2" cy="-73" rx="6" ry="8.5" transform="rotate(5 -2 -73)" fill="url(#goldGrad)" />
+      <ellipse cx="6" cy="-88" rx="5.5" ry="8" transform="rotate(0 6 -88)" fill="url(#goldGrad)" />
+    </g>
+    <path d="M -8,12 C -24,-10 -20,-40 -12,-55 C -15,-30 -12,0 0,0" fill="url(#goldGrad)" stroke="#78350f" stroke-width="0.8" />
+  </g>
+
+  <!-- 10. Golden & Yellow Corn (Right Side) -->
+  <g transform="translate(390, 350) rotate(12) scale(1.15)" filter="url(#3dShadow)">
+    <g transform="translate(-14, -48) rotate(-15)">
+      <ellipse cx="0" cy="0" rx="14" ry="28" fill="#fbbf24" stroke="#78350f" stroke-width="1.2" />
+      <circle cx="-5" cy="-18" r="2" fill="#ffffff" opacity="0.7" />
+      <circle cx="0" cy="-18" r="2.5" fill="#fff7ed" />
+      <circle cx="5" cy="-18" r="2" fill="#fbbf24" />
+      <circle cx="-8" cy="-10" r="2.5" fill="#fbbf24" />
+      <circle cx="-3" cy="-10" r="2.8" fill="#f59e0b" />
+      <circle cx="3" cy="-10" r="2.8" fill="#fbbf24" />
+      <circle cx="8" cy="-10" r="2.5" fill="#f59e0b" />
+      <circle cx="-9" cy="0" r="2.5" fill="#fbbf24" />
+      <circle cx="-4" cy="0" r="3" fill="#fbbf24" />
+      <circle cx="2" cy="0" r="3" fill="#f59e0b" />
+      <circle cx="8" cy="0" r="2.5" fill="#fbbf24" />
+      <circle cx="-8" cy="10" r="2.5" fill="#f59e0b" />
+      <circle cx="-3" cy="10" r="2.8" fill="#fbbf24" />
+      <circle cx="3" cy="10" r="2.8" fill="#d97706" />
+      <circle cx="7" cy="10" r="2.5" fill="#f59e0b" />
+      <circle cx="-5" cy="18" r="2.2" fill="#f59e0b" />
+      <circle cx="0" cy="18" r="2.5" fill="#fbbf24" />
+      <circle cx="5" cy="18" r="2.2" fill="#d97706" />
+    </g>
+    <g transform="translate(2, -32) rotate(15)">
+      <ellipse cx="0" cy="0" rx="12" ry="24" fill="#f59e0b" stroke="#78350f" stroke-width="1.2" />
+      <circle cx="-4" cy="-14" r="2" fill="#fbbf24" />
+      <circle cx="1" cy="-14" r="2.2" fill="#fbbf24" />
+      <circle cx="5" cy="-14" r="2" fill="#d97706" />
+      <circle cx="-6" cy="-6" r="2.2" fill="#f59e0b" />
+      <circle cx="-1" cy="-6" r="2.5" fill="#fbbf24" />
+      <circle cx="4" cy="-6" r="2.5" fill="#f59e0b" />
+      <circle cx="-7" cy="4" r="2.2" fill="#fbbf24" />
+      <circle cx="-2" cy="4" r="2.6" fill="#f59e0b" />
+      <circle cx="3" cy="4" r="2.6" fill="#fbbf24" />
+      <circle cx="7" cy="4" r="2.2" fill="#d97706" />
+      <circle cx="-4" cy="12" r="2" fill="#d97706" />
+      <circle cx="1" cy="12" r="2.2" fill="#f59e0b" />
+      <circle cx="5" cy="12" r="2" fill="#b45309" />
+    </g>
+    <path d="M -23,-8 C -30,-36 -12,-74 10,-82 C -2,-64 -15,-30 -3,0" fill="#047857" stroke="#022c22" stroke-width="1.2" />
+    <path d="M 12,-10 C 24,-30 20,-66 -1,-78 C 8,-54 2,-20 -5,0" fill="#10b981" stroke="#022c22" stroke-width="1" />
+    <path d="M -15,-5 C -8,-25 -2,-50 14,-62 C 3,-45 -4,-22 -7,2" fill="#059669" stroke="#022c22" stroke-width="0.8" opacity="0.8" />
+  </g>
+
+  <!-- 11. Bottom Ribbon Banner -->
+  <g filter="url(#3dShadow)">
+    <path d="M 45,410 L 25,432 L 45,454 L 45,420 Z M 455,410 L 475,432 L 455,454 L 455,420 Z" fill="#78350f" stroke="#451a03" stroke-width="1.5" />
+    <path d="M 25,432 L 55,462 L 45,454 Z" fill="#92400e" />
+    <path d="M 475,432 L 445,462 L 455,454 Z" fill="#92400e" />
+    <path 
+      d="M 45,410 
+         Q 250,446 455,410 
+         L 443,464 
+         Q 250,500 57,464 
+         Z" 
+      fill="#0b1329" 
+      stroke="url(#goldGrad)" 
+      stroke-width="4" 
+      stroke-linejoin="round"
+    />
+    <path 
+      d="M 51,417 
+         Q 250,452 449,417" 
+      fill="none" 
+      stroke="url(#goldGrad)" 
+      stroke-width="1.5" 
+      opacity="0.85"
+    />
+    <path 
+      d="M 61,457 
+         Q 250,492 439,457" 
+      fill="none" 
+      stroke="url(#goldGrad)" 
+      stroke-width="1.5" 
+      opacity="0.85"
+    />
+    <text 
+      x="250" 
+      y="437" 
+      text-anchor="middle" 
+      fill="#ffffff" 
+      font-weight="900" 
+      font-size="18" 
+      font-family="sans-serif"
+      letter-spacing="4"
+      style="text-shadow: 0px 1.5px 3px rgba(0,0,0,0.95)"
+    >
+      PERGUDANGAN
+    </text>
+    <text 
+      x="250" 
+      y="456" 
+      text-anchor="middle" 
+      fill="url(#goldGrad)" 
+      font-weight="900" 
+      font-size="14.5" 
+      font-family="sans-serif"
+      letter-spacing="1.8"
+      style="text-shadow: 0px 1.5px 2px rgba(0,0,0,0.95)"
+    >
+      ★ BERAS & JAGUNG ★
+    </text>
+  </g>
+</svg>

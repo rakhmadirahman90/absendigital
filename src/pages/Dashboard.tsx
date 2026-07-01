@@ -291,8 +291,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className={`lg:col-span-2 rounded-2xl p-6 md:p-8 text-white shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[220px] transition-all duration-500 bg-gradient-to-br ${isDaytime ? 'from-sky-500 via-blue-600 to-indigo-700' : 'from-slate-950 via-slate-900 to-indigo-950 border border-indigo-500/20 shadow-[0_0_25px_rgba(99,102,241,0.15)]'}`}>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={`md:col-span-2 rounded-2xl p-6 md:p-8 text-white shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[220px] transition-all duration-500 bg-gradient-to-br ${isDaytime ? 'from-sky-500 via-blue-600 to-indigo-700' : 'from-slate-950 via-slate-900 to-indigo-950 border border-indigo-500/20 shadow-[0_0_25px_rgba(99,102,241,0.15)]'}`}>
           {/* Theme Interactive Toggle Badge */}
           <button
             onClick={toggleTheme}
@@ -364,14 +364,14 @@ export default function Dashboard() {
           </div>
         </div>
         
-        <div className="lg:col-span-1">
+        <div className="md:col-span-1">
           <RealTimeClock variant="card" className="h-full flex flex-col justify-between" />
         </div>
       </div>
 
       {/* Stats Cards Row (Dynamic Icon Set and Styles based on Day/Night) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className={`p-6 rounded-2xl border shadow-sm flex items-center space-x-4 transition-all duration-500 ${themeCardBg}`}>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className={`p-6 rounded-2xl border shadow-sm flex items-center space-x-4 transition-all duration-500 col-span-1 ${themeCardBg}`}>
           <div className={`p-3 rounded-xl transition-colors duration-500 ${isDaytime ? 'bg-blue-50 text-blue-600' : 'bg-cyan-950/60 text-cyan-400 border border-cyan-500/30'}`}>
              <UserCircle2 size={24} />
           </div>
@@ -380,7 +380,7 @@ export default function Dashboard() {
             <p className={`font-semibold ${themeTextVal}`}>{dbUser.jabatan || '-'}</p>
           </div>
         </div>
-        <div className={`p-6 rounded-2xl border shadow-sm flex items-center space-x-4 transition-all duration-500 ${themeCardBg}`}>
+        <div className={`p-6 rounded-2xl border shadow-sm flex items-center space-x-4 transition-all duration-500 col-span-1 ${themeCardBg}`}>
           <div className={`p-3 rounded-xl transition-colors duration-500 ${isDaytime ? 'bg-indigo-50 text-indigo-600' : 'bg-purple-950/60 text-purple-400 border border-purple-500/30'}`}>
              <Briefcase size={24} />
           </div>
@@ -389,7 +389,7 @@ export default function Dashboard() {
             <p className={`font-semibold ${themeTextVal}`}>{dbUser.divisi || '-'}</p>
           </div>
         </div>
-        <div className={`p-6 rounded-2xl border shadow-sm flex items-center space-x-4 transition-all duration-500 ${themeCardBg}`}>
+        <div className={`p-6 rounded-2xl border shadow-sm flex items-center space-x-4 transition-all duration-500 col-span-2 lg:col-span-1 ${themeCardBg}`}>
           {/* Dynamic icon choice based on daytime/nighttime */}
           <div className={`p-3 rounded-xl transition-colors duration-500 ${isDaytime ? 'bg-amber-50 text-amber-600' : 'bg-indigo-950/60 text-indigo-300 border border-indigo-500/30'}`}>
              {isDaytime ? <CloudSun size={24} /> : <CloudMoon size={24} />}
@@ -404,9 +404,9 @@ export default function Dashboard() {
       </div>
       
       {/* Summary and Trends Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Today's Summary Card */}
-        <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg} lg:col-span-1 flex flex-col justify-between`}>
+        <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg} md:col-span-1 flex flex-col justify-between`}>
           <div>
             <h3 className={`text-lg font-bold mb-4 ${themeTextVal}`}>Ringkasan Hari Ini</h3>
             {todayAttendance ? (
@@ -436,7 +436,7 @@ export default function Dashboard() {
         </div>
 
         {/* Weekly Attendance Trend Card */}
-        <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg} lg:col-span-2 flex flex-col justify-between`}>
+        <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg} md:col-span-2 flex flex-col justify-between`}>
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className={`text-lg font-bold flex items-center gap-2 ${themeTextVal}`}>

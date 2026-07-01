@@ -1,5 +1,5 @@
 {
-  "name": "Presensi Karyawan US Bilibili 162",
+  "name": "Aplikasi Presensi US Bilibili 162",
   "description": "Aplikasi Hadir 162 untuk Presensi Karyawan US Bilibili 162 dengan verifikasi foto selfie dan lokasi presensi.",
   "requestFramePermissions": [
     "camera",

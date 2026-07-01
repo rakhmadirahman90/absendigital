@@ -3,6 +3,7 @@ import { doc, setDoc, collection, query, where, getDocs } from 'firebase/firesto
 import { db } from '../lib/firebase';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import AppLogo from '../components/AppLogo';
 import { 
   Building2, 
   Smartphone, 
@@ -148,38 +149,15 @@ export default function Login() {
         {/* Brand / Logo Section */}
         <div className="flex flex-col items-center mb-8">
           
-          {/* Animated Toraja "Paqbarre Allo" (Sun Carving) Emblem with deep royal blue highlights */}
-          <div className="relative mb-4 group cursor-pointer">
-            {/* Outer soft glow ring */}
-            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-blue-400 to-sky-400 blur-md opacity-30 group-hover:opacity-50 transition-opacity duration-500" />
-            <div className="relative w-24 h-24 rounded-full bg-blue-50 border border-blue-200/60 flex items-center justify-center overflow-hidden shadow-inner">
-              <svg viewBox="0 0 100 100" className="w-20 h-20 text-blue-700 drop-shadow-[0_2px_4px_rgba(29,78,216,0.15)] transition-all duration-300 group-hover:scale-105" fill="none" stroke="currentColor" strokeWidth="1.5">
-                {/* Outer spinning dashed ring */}
-                <circle cx="50" cy="50" r="45" stroke="#0EA5E9" strokeWidth="1" strokeDasharray="6 3" className="animate-[spin_40s_linear_infinite]" />
-                {/* Inner gears */}
-                <circle cx="50" cy="50" r="34" stroke="#1D4ED8" strokeWidth="1.2" />
-                <circle cx="50" cy="50" r="24" stroke="#0EA5E9" strokeWidth="1" />
-                {/* Central shining node */}
-                <circle cx="50" cy="50" r="5" fill="#1D4ED8" className="animate-pulse" />
-                
-                {/* Sunrays (Triangular traditional elements) */}
-                <path d="M50,4 L50,16 M50,84 L50,96 M4,50 L16,50 M84,50 L96,50" stroke="#1D4ED8" strokeWidth="2.5" />
-                <path d="M17,17 L26,26 M74,74 L83,83 M17,74 L26,65 M74,17 L83,26" stroke="#0EA5E9" strokeWidth="1.5" />
-                
-                {/* Elegant central star points */}
-                <polygon points="50,22 46,32 54,32" fill="#1D4ED8" opacity="0.9" />
-                <polygon points="50,78 46,68 54,68" fill="#1D4ED8" opacity="0.9" />
-                <polygon points="22,50 32,46 32,54" fill="#0EA5E9" opacity="0.9" />
-                <polygon points="78,50 68,46 68,54" fill="#0EA5E9" opacity="0.9" />
-              </svg>
-            </div>
+          <div className="relative mb-2 group cursor-pointer">
+            <AppLogo size={150} />
           </div>
 
-          <h1 className="text-3xl font-bold font-display text-center text-slate-900 tracking-wide flex flex-col items-center gap-1">
-            <span className="text-sm font-mono font-bold tracking-widest text-blue-600 bg-blue-100 px-2.5 py-0.5 rounded-md">HADIR 162</span>
-            <span className="text-2xl font-extrabold tracking-tight">US BILIBILI 162</span>
+          <h1 className="text-3xl font-bold font-display text-center text-slate-900 tracking-wide flex flex-col items-center gap-1 mt-2">
+            <span className="text-xs font-mono font-bold tracking-widest text-blue-600 bg-blue-100 px-2.5 py-0.5 rounded-md">HADIR 162</span>
+            <span className="text-2xl font-extrabold tracking-tight text-slate-900">US BILIBILI 162</span>
           </h1>
-          <p className="text-center text-[10px] text-slate-500 mt-1.5 max-w-xs uppercase tracking-widest font-mono font-semibold">
+          <p className="text-center text-[10px] text-slate-500 mt-1 max-w-xs uppercase tracking-widest font-mono font-semibold">
             {isForgotPassword ? 'Pemulihan Kredensial' : isRegister ? 'Sistem Pendaftaran Anggota' : 'Presensi Karyawan US Bilibili 162'}
           </p>
         </div>

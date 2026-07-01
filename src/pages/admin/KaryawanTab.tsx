@@ -396,7 +396,8 @@ export default function KaryawanTab() {
             )}
 
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Desktop View */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
@@ -439,8 +440,8 @@ export default function KaryawanTab() {
                                             </td>
                                             <td className="p-4 text-sm">
                                                 <div className="flex justify-end gap-2">
-                                                    <button onClick={() => handleEdit(user)} className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Edit2 size={18} /></button>
-                                                    <button onClick={() => setDeleteId(user.id)} className="w-10 h-10 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                                                    <button onClick={() => handleEdit(user)} className="w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Karyawan"><Edit2 size={18} /></button>
+                                                    <button onClick={() => setDeleteId(user.id)} className="w-10 h-10 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Karyawan"><Trash2 size={18} /></button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -449,6 +450,55 @@ export default function KaryawanTab() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile & Tablet Card View */}
+                <div className="block md:hidden divide-y divide-slate-100">
+                    {loading ? (
+                        <div className="p-6 text-center text-slate-500">Loading...</div>
+                    ) : users.length === 0 ? (
+                        <div className="p-6 text-center text-slate-500">Tidak ada data karyawan.</div>
+                    ) : (
+                        users.map(user => {
+                            const assignedOffice = offices.find(o => o.id === user.assignedOfficeId || (o.id === 'default' && user.assignedOfficeId === 'default_office'));
+                            const officeLabel = user.assignedOfficeId === 'all' || !user.assignedOfficeId 
+                                ? 'Semua Lokasi' 
+                                : (assignedOffice ? assignedOffice.name : 'Lokasi Khusus (Dihapus)');
+                            return (
+                                <div key={user.id} className="p-4 flex flex-col space-y-3 hover:bg-slate-50/50 transition-all">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h4 className="font-bold text-slate-800 text-sm">{user.nama}</h4>
+                                            <span className="text-xs text-slate-500 font-mono">{user.waNumber}</span>
+                                        </div>
+                                        <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-full tracking-wider ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                            {user.role}
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100/70 text-xs">
+                                        <div>
+                                            <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">Divisi</span>
+                                            <span className="font-semibold text-slate-700 mt-0.5 block">{user.divisi || '-'}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">Jabatan</span>
+                                            <span className="font-semibold text-slate-700 mt-0.5 block">{user.jabatan || '-'}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs">
+                                        <div className="flex items-center gap-1.5 text-slate-600">
+                                            <Building size={13} className="text-slate-400 shrink-0" />
+                                            <span className="font-medium text-slate-700">{officeLabel}</span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleEdit(user)} className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg font-bold hover:bg-blue-100 transition-colors flex items-center gap-1" title="Edit"><Edit2 size={12} /><span>Edit</span></button>
+                                            <button onClick={() => setDeleteId(user.id)} className="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg font-bold hover:bg-red-100 transition-colors flex items-center gap-1" title="Hapus"><Trash2 size={12} /><span>Hapus</span></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
             </div>
             

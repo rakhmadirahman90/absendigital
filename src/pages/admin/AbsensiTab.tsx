@@ -869,7 +869,8 @@ export default function AbsensiTab() {
 
             {/* Attendance Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Desktop View */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200">
@@ -1030,6 +1031,113 @@ export default function AbsensiTab() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile & Tablet Card View */}
+                <div className="block md:hidden divide-y divide-slate-100">
+                    {loading ? (
+                        <div className="p-6 text-center text-slate-400">
+                            <div className="flex flex-col items-center justify-center space-y-2">
+                                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-xs font-medium text-slate-500">Memuat data absensi...</span>
+                            </div>
+                        </div>
+                    ) : displayedAttendance.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500">
+                            <div className="max-w-md mx-auto space-y-2">
+                                <p className="font-bold text-slate-700">Tidak ada data absensi</p>
+                                <p className="text-xs text-slate-400">
+                                    {attendance.length === 0 
+                                        ? 'Belum ada data presensi yang masuk pada tanggal terpilih.' 
+                                        : 'Tidak ada data presensi yang cocok dengan filter aktif Anda.'}
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        displayedAttendance.map(item => {
+                            const user = usersMap[item.user_id] || {};
+                            
+                            const getStatusStyles = (status: string) => {
+                                switch (status) {
+                                    case 'Hadir':
+                                        return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                                    case 'Terlambat':
+                                        return 'bg-rose-50 text-rose-700 border-rose-100';
+                                    case 'Izin':
+                                        return 'bg-amber-50 text-amber-700 border-amber-100';
+                                    case 'Sakit':
+                                        return 'bg-sky-50 text-sky-700 border-sky-100';
+                                    case 'Alpa':
+                                        return 'bg-slate-100 text-slate-700 border-slate-200';
+                                    default:
+                                        return 'bg-slate-50 text-slate-600 border-slate-100';
+                                }
+                            };
+
+                            return (
+                                <div key={item.id} className="p-4 flex flex-col space-y-3 hover:bg-slate-50/50 transition-all">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h4 className="font-bold text-slate-800 text-sm">{user.nama || 'Tidak Dikenal'}</h4>
+                                            <span className="text-[10px] text-slate-400">UID: {item.user_id?.substring(0, 10)}</span>
+                                        </div>
+                                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${getStatusStyles(item.status || 'Hadir')}`}>
+                                            {item.status || 'Hadir'}
+                                        </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100/70 text-xs">
+                                        <div>
+                                            <span className="text-[9px] text-slate-400 block font-semibold uppercase tracking-wider">Divisi</span>
+                                            <span className="font-semibold text-slate-700 mt-0.5 block">{user.divisi || '-'}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] text-slate-400 block font-semibold uppercase tracking-wider">Jam Masuk</span>
+                                            <span className="font-mono font-bold text-slate-700 mt-0.5 block">{item.jam_masuk || '-'}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] text-slate-400 block font-semibold uppercase tracking-wider">Jam Pulang</span>
+                                            <span className="font-mono font-bold text-slate-700 mt-0.5 block">{item.jam_pulang || '-'}</span>
+                                        </div>
+                                    </div>
+
+                                    {item.alamat_masuk && (
+                                        <div className="flex items-start gap-1.5 text-xs text-slate-500 bg-blue-50/40 p-2 rounded-lg border border-blue-100/30">
+                                            <MapPin size={13} className="text-blue-500 shrink-0 mt-0.5" />
+                                            <span className="leading-normal">{item.alamat_masuk}</span>
+                                        </div>
+                                    )}
+
+                                    <div className="flex justify-between items-center text-xs pt-1">
+                                        <div className="flex items-center gap-1.5">
+                                            {item.selfie_masuk && (
+                                                <button onClick={() => setViewPhoto(item.selfie_masuk)} className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded border border-indigo-100 text-[10px] font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1">
+                                                    <ImageIcon size={10} />
+                                                    <span>Selfie Masuk</span>
+                                                </button>
+                                            )}
+                                            {item.selfie_pulang && (
+                                                <button onClick={() => setViewPhoto(item.selfie_pulang)} className="px-2 py-1 bg-teal-50 text-teal-600 rounded border border-teal-100 text-[10px] font-bold hover:bg-teal-100 transition-colors flex items-center gap-1">
+                                                    <ImageIcon size={10} />
+                                                    <span>Selfie Pulang</span>
+                                                </button>
+                                            )}
+                                            {item.latitude_masuk && !item.alamat_masuk && (
+                                                <button onClick={() => handleOpenMap(item.latitude_masuk, item.longitude_masuk)} className="px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-100 text-[10px] font-bold hover:bg-blue-100 transition-colors flex items-center gap-1">
+                                                    <MapPin size={10} />
+                                                    <span>Buka Peta</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleEdit(item)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors" title="Edit"><Edit2 size={13} /></button>
+                                            <button onClick={() => setDeleteId(item.id)} className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors" title="Hapus"><Trash2 size={13} /></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
                 </div>
             </div>
             </>

@@ -227,10 +227,10 @@ export default function DashboardTab() {
         </button>
       </div>
 
-      {/* Bento Grid Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* Bento Grid Stats Row - Perfectly Responsive on all screen sizes */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {/* Total Karyawan */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group col-span-1">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Karyawan</span>
             <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
@@ -245,7 +245,7 @@ export default function DashboardTab() {
         </div>
 
         {/* Hadir Hari Ini */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group col-span-1">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-emerald-500 uppercase tracking-wider">Hadir Hari Ini</span>
             <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
@@ -260,7 +260,7 @@ export default function DashboardTab() {
         </div>
 
         {/* Izin/Cuti */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group col-span-1">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-amber-500 uppercase tracking-wider">Sedang Izin/Cuti</span>
             <div className="p-2 bg-amber-50 text-amber-600 rounded-xl">
@@ -275,7 +275,7 @@ export default function DashboardTab() {
         </div>
 
         {/* Terlambat */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group col-span-1">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-rose-500 uppercase tracking-wider">Terlambat</span>
             <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
@@ -290,7 +290,7 @@ export default function DashboardTab() {
         </div>
 
         {/* Belum Absen */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm relative overflow-hidden group col-span-2 md:col-span-2 lg:col-span-1">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Belum Presensi</span>
             <div className="p-2 bg-slate-50 text-slate-600 rounded-xl">
@@ -306,10 +306,10 @@ export default function DashboardTab() {
       </div>
 
       {/* Main Charts and Widgets Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Weekly Chart Panel */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm lg:col-span-2 flex flex-col justify-between">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm md:col-span-2 flex flex-col justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
               <BarChart2 size={18} className="text-blue-500" /> Kehadiran Mingguan (Jumlah Karyawan)
@@ -397,7 +397,7 @@ export default function DashboardTab() {
       </div>
 
       {/* Bottom Section: Real-time Feed and Quick Approvals */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* Real-time Presence Feed */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">

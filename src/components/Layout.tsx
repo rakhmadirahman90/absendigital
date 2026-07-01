@@ -1,5 +1,6 @@
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
+import AppLogo from './AppLogo';
 import { Home, MapPin, Clock, LogOut, Shield, ClipboardList, Users, CheckSquare, FileCheck, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -30,11 +31,30 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row relative overflow-hidden">
+      {/* Luxurious Sulawesi Batik Walasuji (Diamond Lattice Motif) Watermark Background */}
+      <svg className="absolute inset-0 w-full h-full opacity-[0.03] select-none pointer-events-none z-0" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="layout-walasuji" width="120" height="120" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="120" y2="0" stroke="#2563EB" strokeWidth="1.2" />
+            <line x1="0" y1="0" x2="0" y2="120" stroke="#0EA5E9" strokeWidth="1.2" />
+            <rect x="20" y="20" width="80" height="80" fill="none" stroke="#2563EB" strokeWidth="0.8" strokeDasharray="4 8" />
+            <rect x="45" y="45" width="30" height="30" fill="none" stroke="#0EA5E9" strokeWidth="0.8" />
+            <circle cx="0" cy="0" r="3.5" fill="#2563EB" />
+            <circle cx="60" cy="60" r="3" fill="#0EA5E9" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#layout-walasuji)" />
+      </svg>
+
       {/* Sidebar for Desktop */}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200 shrink-0">
-        <div className="p-6 border-b border-slate-200">
-          <h1 className="text-xl font-bold text-slate-800">Hadir 162</h1>
+      <aside className="hidden md:flex flex-col w-64 bg-white/90 backdrop-blur-md border-r border-slate-200 shrink-0 relative z-10 shadow-sm">
+        <div className="p-5 border-b border-slate-200 flex items-center space-x-3">
+          <AppLogo size={42} />
+          <div className="flex flex-col">
+            <span className="text-sm font-bold text-slate-800 leading-tight">US BILIBILI</span>
+            <span className="text-[10px] font-mono font-bold tracking-widest text-blue-600 bg-blue-50 px-1 py-0.2 rounded mt-0.5 w-max">HADIR 162</span>
+          </div>
         </div>
         <nav className="flex-1 p-4 space-y-2">
           {navItems.map((item) => (
@@ -64,9 +84,9 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Desktop Header bar */}
-        <header className="hidden md:flex items-center justify-between bg-white border-b border-slate-200 px-8 py-4 shrink-0">
+        <header className="hidden md:flex items-center justify-between bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-4 shrink-0">
           <div className="flex flex-col">
             <span className="text-xs text-slate-400 font-medium uppercase tracking-wider">Selamat datang</span>
             <span className="font-bold text-slate-800 text-sm">
@@ -87,8 +107,14 @@ export default function Layout() {
         </header>
 
         {/* Mobile Header */}
-        <header className="md:hidden bg-white border-b border-slate-200 p-4 flex justify-between items-center shrink-0">
-          <h1 className="text-lg font-bold text-slate-800">Hadir 162</h1>
+        <header className="md:hidden bg-white/95 backdrop-blur-md border-b border-slate-200 p-3 px-4 flex justify-between items-center shrink-0">
+          <div className="flex items-center space-x-2.5">
+            <AppLogo size={36} />
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-800 leading-none">US BILIBILI</span>
+              <span className="text-[9px] font-mono font-semibold tracking-wider text-blue-600 mt-0.5">HADIR 162</span>
+            </div>
+          </div>
           <div className="flex items-center space-x-2">
             <NotificationBell />
             <button onClick={handleLogout} className="text-red-600 p-2 hover:bg-red-50 rounded-lg transition-all">
@@ -105,14 +131,14 @@ export default function Layout() {
       </div>
 
       {/* Bottom Navigation for Mobile */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-40">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 flex justify-around p-2 pb-safe z-40">
         {navItems.map((item) => (
           <Link
             key={item.path}
             to={item.path}
             className={`flex flex-col items-center p-2 rounded-lg min-w-[64px] ${
               location.pathname === item.path
-                ? 'text-blue-600'
+                ? 'text-blue-600 font-bold'
                 : 'text-slate-500'
             }`}
           >
