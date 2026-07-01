@@ -47,7 +47,7 @@ export default function KaryawanTab() {
             }
 
             if (!response.ok) {
-                throw new Error(data.error || 'Gagal berkomunikasi dengan layanan AI');
+                throw new Error(data.error || data.message || 'Gagal berkomunikasi dengan layanan AI');
             }
             if (!data.success || !data.employees || data.employees.length === 0) {
                 throw new Error('AI tidak menemukan data karyawan dalam gambar tersebut. Pastikan teks atau tabel terlihat jelas.');

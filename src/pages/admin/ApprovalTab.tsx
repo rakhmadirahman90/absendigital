@@ -53,7 +53,7 @@ export default function ApprovalTab() {
             }
 
             if (!response.ok) {
-                throw new Error(resData.error || 'Gagal berkomunikasi dengan AI');
+                throw new Error(resData.error || resData.message || 'Gagal berkomunikasi dengan AI');
             }
             if (!resData.success || !resData.data) {
                 throw new Error('AI tidak berhasil mengekstrak data dari dokumen ini.');

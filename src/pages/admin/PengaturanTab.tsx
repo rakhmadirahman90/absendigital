@@ -56,7 +56,7 @@ export default function PengaturanTab() {
       }
 
       if (!response.ok) {
-        throw new Error(resData.error || 'Gagal berkomunikasi dengan AI');
+        throw new Error(resData.error || resData.message || 'Gagal berkomunikasi dengan AI');
       }
 
       if (!resData.success || !resData.data) {

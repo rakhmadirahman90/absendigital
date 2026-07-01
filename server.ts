@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import cors from "cors";
@@ -223,7 +224,7 @@ app.post("/api/extract-employees", async (req, res) => {
     console.error("Error during AI employee extraction:", error);
     return res.status(500).json({
       success: false,
-      error: "Gagal mengekstrak data menggunakan AI: " + (error.message || error)
+      error: "Gagal mengekstrak data menggunakan AI: " + (error.message || String(error))
     });
   }
 });
@@ -309,7 +310,7 @@ app.post("/api/extract-attendance", async (req, res) => {
     return res.json({ success: true, records: result.records || [] });
   } catch (error: any) {
     console.error("Error during AI attendance extraction:", error);
-    return res.status(500).json({ success: false, error: error.message || error });
+    return res.status(500).json({ success: false, error: error.message || String(error) });
   }
 });
 
@@ -396,7 +397,7 @@ app.post("/api/extract-approval", async (req, res) => {
     return res.json({ success: true, data: result });
   } catch (error: any) {
     console.error("Error during AI approval extraction:", error);
-    return res.status(500).json({ success: false, error: error.message || error });
+    return res.status(500).json({ success: false, error: error.message || String(error) });
   }
 });
 
@@ -468,7 +469,7 @@ app.post("/api/extract-office", async (req, res) => {
     return res.json({ success: true, data: result });
   } catch (error: any) {
     console.error("Error during AI office extraction:", error);
-    return res.status(500).json({ success: false, error: error.message || error });
+    return res.status(500).json({ success: false, error: error.message || String(error) });
   }
 });
 

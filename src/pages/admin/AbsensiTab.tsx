@@ -212,7 +212,7 @@ export default function AbsensiTab() {
             }
 
             if (!response.ok) {
-                throw new Error(data.error || 'Gagal berkomunikasi dengan AI');
+                throw new Error(data.error || data.message || 'Gagal berkomunikasi dengan AI');
             }
 
             if (!data.success || !data.records || data.records.length === 0) {

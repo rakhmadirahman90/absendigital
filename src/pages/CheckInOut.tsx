@@ -405,7 +405,7 @@ export default function CheckInOut() {
         }
 
         if (!verifyResponse.ok) {
-          throw new Error(`Gagal menghubungi server verifikasi wajah: ${verifyData.error || verifyData.reason || 'Sistem penolakan aktif.'}`);
+          throw new Error(`Gagal menghubungi server verifikasi wajah: ${verifyData.error || verifyData.message || verifyData.reason || 'Sistem penolakan aktif.'}`);
         }
         if (!verifyData.success || !verifyData.is_valid) {
           throw new Error(`Verifikasi Wajah Gagal: ${verifyData.reason || 'Wajah manusia tidak terdeteksi secara aktif.'}`);
