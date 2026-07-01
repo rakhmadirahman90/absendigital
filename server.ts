@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import cors from "cors";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -11,6 +12,16 @@ app.use(express.json({ limit: '10mb' })); // Increase limit for base64 images
 
 const PORT = 3000;
 
+function writeLog(message: string) {
+  try {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(path.join(process.cwd(), "server.log"), `[${timestamp}] ${message}\n`);
+    console.log(`[LOG] ${message}`);
+  } catch (err) {
+    console.error("Failed to write to server.log", err);
+  }
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
@@ -18,13 +29,19 @@ app.get("/api/health", (req, res) => {
 // AI Face Verification Endpoint
 app.post("/api/verify-selfie", async (req, res) => {
   const { image } = req.body;
+  writeLog(`POST /api/verify-selfie called. Image present: ${!!image}, length: ${image ? image.length : 0}`);
+
   if (!image) {
+    writeLog("Error: Image data is required");
     return res.status(400).json({ success: false, error: "Image data is required" });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
+  writeLog(`GEMINI_API_KEY present: ${!!apiKey}, value matches placeholder: ${apiKey === "MY_GEMINI_API_KEY"}`);
+
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
     console.warn("GEMINI_API_KEY is not set or using placeholder. Falling back to local offline validation.");
+    writeLog("Falling back to local offline validation due to missing/placeholder API key");
     return res.json({
       success: true,
       is_valid: true,
@@ -43,7 +60,9 @@ app.post("/api/verify-selfie", async (req, res) => {
       mimeType = parts[0].replace("data:", "");
       base64Data = parts[1];
     }
+    writeLog(`MimeType detected: ${mimeType}, base64Data length: ${base64Data.length}`);
 
+    writeLog("Initializing GoogleGenAI SDK...");
     const ai = new GoogleGenAI({
       apiKey: apiKey,
       httpOptions: {
@@ -53,6 +72,7 @@ app.post("/api/verify-selfie", async (req, res) => {
       }
     });
 
+    writeLog("Calling ai.models.generateContent...");
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: {
@@ -99,11 +119,13 @@ app.post("/api/verify-selfie", async (req, res) => {
     });
 
     const resultText = response.text;
+    writeLog(`Gemini API raw response text: ${resultText}`);
     if (!resultText) {
       throw new Error("No response text from Gemini API");
     }
 
     const result = JSON.parse(resultText.trim());
+    writeLog(`Parsed Gemini result: is_valid=${result.is_valid}, confidence=${result.confidence}, reason=${result.reason}`);
     return res.json({
       success: true,
       is_valid: result.is_valid,
@@ -113,6 +135,7 @@ app.post("/api/verify-selfie", async (req, res) => {
 
   } catch (error: any) {
     console.error("Error during AI selfie verification, falling back to local validation:", error);
+    writeLog(`Exception caught in verify-selfie: ${error.message || String(error)}`);
     return res.json({
       success: true,
       is_valid: true,

@@ -346,7 +346,10 @@ export default function CheckInOut() {
         throw new Error('Kamera sedang memuat aliran video. Silakan coba lagi dalam beberapa detik.');
       }
 
-      const rawImageSrc = webcamRef.current?.getScreenshot();
+      const rawImageSrc = webcamRef.current?.getScreenshot({
+        width: 640,
+        height: 480
+      });
 
       if (!rawImageSrc) {
         throw new Error('Gagal mengambil foto. Pastikan kamera diizinkan.');
@@ -405,7 +408,7 @@ export default function CheckInOut() {
         }
 
         if (!verifyResponse.ok) {
-          throw new Error(`Gagal menghubungi server verifikasi wajah: ${verifyData.error || verifyData.message || verifyData.reason || 'Sistem penolakan aktif.'}`);
+          throw new Error(`Gagal menghubungi server verifikasi wajah (Status: ${verifyResponse.status}): ${verifyData.error || verifyData.message || verifyData.reason || 'Sistem penolakan aktif.'}`);
         }
         if (!verifyData.success || !verifyData.is_valid) {
           throw new Error(`Verifikasi Wajah Gagal: ${verifyData.reason || 'Wajah manusia tidak terdeteksi secara aktif.'}`);
