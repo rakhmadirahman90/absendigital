@@ -7,5 +7,6 @@ const app = initializeApp(config);
 export const auth = getAuth(app);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, config.firestoreDatabaseId);
+  useFetchStreams: false,
+} as any, config.firestoreDatabaseId);
 

@@ -48,6 +48,14 @@ export default function AbsensiTab() {
     
     const [payrollSearch, setPayrollSearch] = useState('');
     const [selectedEmpPayrollDetail, setSelectedEmpPayrollDetail] = useState<any>(null);
+    const [time, setTime] = useState(new Date());
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setTime(new Date());
+        }, 10000); // Update every 10 seconds for real-time calculations
+        return () => clearInterval(interval);
+    }, []);
     
     const formatRupiah = (val: string | number) => {
         if (val === undefined || val === null || val === '') return '';
@@ -315,6 +323,8 @@ export default function AbsensiTab() {
             });
             setUsersMap(map);
             setDivisiList(Array.from(divisiSet));
+        }, (error) => {
+            console.error("Error listening to users:", error);
         });
         return () => unsubUsers();
     }, []);
@@ -868,6 +878,23 @@ export default function AbsensiTab() {
                 const inVal = rec.jam_masuk || '';
                 const outVal = rec.jam_pulang || '';
                 
+                if (!inVal || !outVal) {
+                    salaryBreakdown.push({
+                        tanggal: rec.tanggal,
+                        status: rec.status,
+                        jam_masuk: inVal || '-',
+                        jam_pulang: outVal || '-',
+                        istirahat: 0,
+                        jam_kerja: 0,
+                        lembur: 0,
+                        gaji_hari_ini: 0,
+                        dryer_aktif: false,
+                        dryer_bonus: 0,
+                        keterangan: !inVal ? 'Belum Absen Masuk' : 'Belum Absen Pulang'
+                    });
+                    return;
+                }
+                
                 let inTime = 0;
                 let outTime = 0;
                 
@@ -897,6 +924,7 @@ export default function AbsensiTab() {
                     lemburHours = netHours;
                 } else {
                     regularHours = netHours;
+                    lemburHours = 0;
                 }
 
                 totalRegularHours += regularHours;

@@ -526,12 +526,16 @@ export default function ApprovalTab() {
                 map[doc.id] = doc.data();
             });
             setUsersMap(map);
+        }, (error) => {
+            console.error("Error listening to users:", error);
         });
 
         const unsubLeave = onSnapshot(query(collection(db, 'leave_requests'), orderBy('created_at', 'desc')), (snap) => {
             const leaves: any[] = [];
             snap.forEach(doc => leaves.push({ id: doc.id, ...doc.data() }));
             setLeaveRequests(leaves);
+        }, (error) => {
+            console.error("Error listening to leave requests:", error);
         });
 
         const unsubOvertime = onSnapshot(query(collection(db, 'overtime'), orderBy('tanggal', 'desc')), (snap) => {
@@ -539,7 +543,8 @@ export default function ApprovalTab() {
             snap.forEach(doc => overtimes.push({ id: doc.id, ...doc.data() }));
             setOvertimeRequests(overtimes);
             setLoading(false);
-        }, () => {
+        }, (error) => {
+            console.error("Error listening to overtime:", error);
             setLoading(false);
         });
 

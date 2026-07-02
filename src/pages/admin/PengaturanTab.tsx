@@ -184,6 +184,8 @@ export default function PengaturanTab() {
           list.push({ id: docSnap.id, ...docSnap.data() });
         });
         setEmployees(list);
+      }, (error) => {
+        console.error("Error listening to employees for WA:", error);
       });
       return () => unsubscribe();
     }

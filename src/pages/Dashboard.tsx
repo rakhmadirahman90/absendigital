@@ -110,6 +110,8 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, []);
 
+  const [allRecords, setAllRecords] = useState<any[]>([]);
+
   useEffect(() => {
     if (!user) return;
     
@@ -120,104 +122,112 @@ export default function Dashboard() {
     
     const unsub = onSnapshot(q, (snapshot) => {
         const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const todayStr = new Date().toISOString().split('T')[0];
-        const todayRecord = records.find((r: any) => r.tanggal === todayStr);
-        setTodayAttendance(todayRecord || null);
-
-        // Calculate estimated salary for current month
-        const currentMonthStr = new Date().toISOString().substring(0, 7); // "YYYY-MM"
-        const currentMonthRecords = records.filter((r: any) => r.tanggal && r.tanggal.startsWith(currentMonthStr));
-        
-        let regHrs = 0;
-        let lembHrs = 0;
-        let dryerBns = 0;
-        let presentDays = 0;
-
-        currentMonthRecords.forEach((rec: any) => {
-          if (!['Hadir', 'Terlambat'].includes(rec.status)) return;
-          presentDays++;
-          
-          const inVal = rec.jam_masuk || '';
-          const outVal = rec.jam_pulang || '';
-          if (!inVal || !outVal) return;
-
-          let inTime = 0;
-          let outTime = 0;
-          if (inVal.includes(':')) {
-              const [h, m] = inVal.split(':').map(Number);
-              inTime = (h || 0) + (m || 0) / 60;
-          } else {
-              inTime = Number(inVal) || 0;
-          }
-          
-          if (outVal.includes(':')) {
-              const [h, m] = outVal.split(':').map(Number);
-              outTime = (h || 0) + (m || 0) / 60;
-          } else {
-              outTime = Number(outVal) || 0;
-          }
-
-          const breakHours = rec.istirahat !== undefined ? Number(rec.istirahat) : 1;
-          const rawHours = Math.max(0, outTime - inTime);
-          const netHours = Math.max(0, rawHours - breakHours);
-
-          if (rec.is_lembur) {
-              lembHrs += netHours;
-          } else {
-              regHrs += netHours;
-          }
-
-          if (rec.dryer_menyala && dbUser?.bonus_dryer_1) {
-              dryerBns += 10000;
-          }
-        });
-
-        const isMonthly = dbUser?.gaji_type === 'per_bulan';
-        const regRate = isMonthly ? 0 : (dbUser?.gaji_per_jam !== undefined ? Number(dbUser.gaji_per_jam) : 14000);
-        const lemburRate = dbUser?.gaji_lembur_per_jam !== undefined ? Number(dbUser.gaji_lembur_per_jam) : 14000;
-        const basePay = isMonthly ? (Number(dbUser.gaji_bulanan) || 0) : 0;
-
-        const earnedRegPay = regHrs * regRate;
-        const earnedLemburPay = lembHrs * lemburRate;
-        const estimatedSalary = basePay + earnedRegPay + earnedLemburPay + dryerBns;
-
-        setMySalaryStats({
-          totalRegularHours: regHrs,
-          totalLemburHours: lembHrs,
-          totalDryerBonus: dryerBns,
-          estimatedSalary,
-          daysPresent: presentDays
-        });
-
-        // Process current week's trends (Monday to Friday)
-        const weekDates = getWeekDates().slice(0, 5); // Just Mon-Fri
-        const trends = weekDates.map(wd => {
-          const dayRecord = records.find((r: any) => r.tanggal === wd.dateString) as any;
-          let onTime = 0;
-          let late = 0;
-          
-          if (dayRecord) {
-            if (dayRecord.status === 'Terlambat') {
-              late = 1;
-            } else {
-              onTime = 1;
-            }
-          }
-          
-          return {
-            name: wd.dayName.substring(0, 3), // "Sen", "Sel", "Rab", etc.
-            'Tepat Waktu': onTime,
-            'Terlambat': late,
-            hadir: dayRecord ? 1 : 0
-          };
-        });
-        setWeeklyTrends(trends);
+        setAllRecords(records);
     }, (error) => {
         console.error("Failed fetching history realtime", error);
     });
 
     return () => unsub();
-  }, [user, dbUser]);
+  }, [user]);
+
+  useEffect(() => {
+    if (!allRecords || allRecords.length === 0) return;
+
+    const todayStr = format(time, 'yyyy-MM-dd');
+    const todayRecord = allRecords.find((r: any) => r.tanggal === todayStr);
+    setTodayAttendance(todayRecord || null);
+
+    // Calculate estimated salary for current month
+    const currentMonthStr = format(time, 'yyyy-MM'); // "YYYY-MM"
+    const currentMonthRecords = allRecords.filter((r: any) => r.tanggal && r.tanggal.startsWith(currentMonthStr));
+    
+    let regHrs = 0;
+    let lembHrs = 0;
+    let dryerBns = 0;
+    let presentDays = 0;
+
+    currentMonthRecords.forEach((rec: any) => {
+      if (!['Hadir', 'Terlambat'].includes(rec.status)) return;
+      presentDays++;
+      
+      const inVal = rec.jam_masuk || '';
+      const outVal = rec.jam_pulang || '';
+      
+      // Only calculate if both check-in and check-out are filled.
+      if (!inVal || !outVal) return;
+
+      let inTime = 0;
+      let outTime = 0;
+      if (inVal.includes(':')) {
+          const [h, m] = inVal.split(':').map(Number);
+          inTime = (h || 0) + (m || 0) / 60;
+      } else {
+          inTime = Number(inVal) || 0;
+      }
+      
+      if (outVal.includes(':')) {
+          const [h, m] = outVal.split(':').map(Number);
+          outTime = (h || 0) + (m || 0) / 60;
+      } else {
+          outTime = Number(outVal) || 0;
+      }
+
+      const breakHours = rec.istirahat !== undefined ? Number(rec.istirahat) : 1;
+      const rawHours = Math.max(0, outTime - inTime);
+      const netHours = Math.max(0, rawHours - breakHours);
+
+      if (rec.is_lembur) {
+          lembHrs += netHours;
+      } else {
+          regHrs += netHours;
+      }
+
+      if (rec.dryer_menyala && dbUser?.bonus_dryer_1) {
+          dryerBns += 10000;
+      }
+    });
+
+    const isMonthly = dbUser?.gaji_type === 'per_bulan';
+    const regRate = isMonthly ? 0 : (dbUser?.gaji_per_jam !== undefined ? Number(dbUser.gaji_per_jam) : 14000);
+    const lemburRate = dbUser?.gaji_lembur_per_jam !== undefined ? Number(dbUser.gaji_lembur_per_jam) : 14000;
+    const basePay = isMonthly ? (Number(dbUser.gaji_bulanan) || 0) : 0;
+
+    const earnedRegPay = regHrs * regRate;
+    const earnedLemburPay = lembHrs * lemburRate;
+    const estimatedSalary = basePay + earnedRegPay + earnedLemburPay + dryerBns;
+
+    setMySalaryStats({
+      totalRegularHours: regHrs,
+      totalLemburHours: lembHrs,
+      totalDryerBonus: dryerBns,
+      estimatedSalary,
+      daysPresent: presentDays
+    });
+
+    // Process current week's trends (Monday to Friday)
+    const weekDates = getWeekDates().slice(0, 5); // Just Mon-Fri
+    const trends = weekDates.map(wd => {
+      const dayRecord = allRecords.find((r: any) => r.tanggal === wd.dateString) as any;
+      let onTime = 0;
+      let late = 0;
+      
+      if (dayRecord) {
+        if (dayRecord.status === 'Terlambat') {
+          late = 1;
+        } else {
+          onTime = 1;
+        }
+      }
+      
+      return {
+        name: wd.dayName.substring(0, 3), // "Sen", "Sel", "Rab", etc.
+        'Tepat Waktu': onTime,
+        'Terlambat': late,
+        hadir: dayRecord ? 1 : 0
+      };
+    });
+    setWeeklyTrends(trends);
+  }, [allRecords, dbUser, time, user]);
 
   useEffect(() => {
     if (!user) return;

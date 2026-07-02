@@ -39,6 +39,8 @@ export default function DashboardTab() {
         const belumAbsen = Math.max(0, totalKaryawan - (prev.hadirHariIni || 0) - (prev.izinCutiHariIni || 0));
         return { ...prev, totalKaryawan, belumAbsen };
       });
+    }, (error) => {
+      console.error("Dashboard error listening to users:", error);
     });
 
     // 2. Monitor Today's Attendance Real-time
@@ -63,6 +65,8 @@ export default function DashboardTab() {
         const belumAbsen = Math.max(0, (prev.totalKaryawan || 0) - hadirHariIni - (prev.izinCutiHariIni || 0));
         return { ...prev, hadirHariIni, terlambat, belumAbsen };
       });
+    }, (error) => {
+      console.error("Dashboard error listening to attendance:", error);
     });
 
     // 3. Monitor Today's Approved Leaves
@@ -79,6 +83,8 @@ export default function DashboardTab() {
         const belumAbsen = Math.max(0, (prev.totalKaryawan || 0) - (prev.hadirHariIni || 0) - izinCutiHariIni);
         return { ...prev, izinCutiHariIni, belumAbsen };
       });
+    }, (error) => {
+      console.error("Dashboard error listening to leave requests:", error);
     });
 
     // 4. Monitor Pending Approvals (Leave Requests + Overtimes)
@@ -99,9 +105,15 @@ export default function DashboardTab() {
         const combined = [...leaves, ...ots].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
         setPendingSubmissions(combined.slice(0, 5));
         setLoading(false);
+      }, (otError) => {
+        console.error("Dashboard error listening to overtime submissions:", otError);
+        setLoading(false);
       });
 
       return () => unsubOvertimePending();
+    }, (error) => {
+      console.error("Dashboard error listening to leave submissions:", error);
+      setLoading(false);
     });
 
     // 5. Monitor Current Week's Attendance Trends (On-Time vs Late)
@@ -138,6 +150,8 @@ export default function DashboardTab() {
       });
       
       setWeeklyData(parsedWeekly);
+    }, (error) => {
+      console.error("Dashboard error listening to weekly trends:", error);
     });
 
     // 6. Monitor Today's WhatsApp Reminder Logs
