@@ -597,6 +597,192 @@ app.post("/api/generate-ai-report", async (req, res) => {
   }
 });
 
+// AI Payroll Report Analysis & Audit Endpoint
+app.post("/api/generate-payroll-ai-report", async (req, res) => {
+  const { payrolls, month, division } = req.body;
+
+  if (!payrolls || !Array.isArray(payrolls)) {
+    return res.status(400).json({ success: false, error: "Data payroll valid diperlukan." });
+  }
+
+  // Calculate some general stats first to populate in fallback or prompt
+  const totalEmployees = payrolls.length;
+  let totalGrandSalary = 0;
+  let totalRegularHours = 0;
+  let totalLemburHours = 0;
+  let totalLemburPay = 0;
+  let totalTunjangan = 0;
+  let totalPotongan = 0;
+  let highestSalary = -1;
+  let highestEarnerName = "-";
+
+  payrolls.forEach(p => {
+    const net = Number(p.grandTotalSalary) || 0;
+    totalGrandSalary += net;
+    totalRegularHours += Number(p.totalRegularHours) || 0;
+    totalLemburHours += Number(p.totalLemburHours) || 0;
+    totalLemburPay += Number(p.totalLemburPay) || 0;
+    totalTunjangan += Number(p.totalTunjangan) || 0;
+    totalPotongan += Number(p.totalPotongan) || 0;
+
+    if (net > highestSalary) {
+      highestSalary = net;
+      highestEarnerName = `${p.employee?.nama || 'Karyawan'} (${p.employee?.jabatan || 'Staf'})`;
+    }
+  });
+
+  const avgSalary = totalEmployees > 0 ? Math.round(totalGrandSalary / totalEmployees) : 0;
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+    // Return high quality offline heuristic report
+    const anomalies: string[] = [];
+    const recommendations: string[] = [];
+
+    // Find anomalies
+    payrolls.forEach(p => {
+      const overtimeHours = Number(p.totalLemburHours) || 0;
+      const potongan = Number(p.totalPotongan) || 0;
+      const regularHours = Number(p.totalRegularHours) || 0;
+      const name = p.employee?.nama || 'Karyawan';
+
+      if (overtimeHours > 30) {
+        anomalies.push(`${name} memiliki jam lembur yang sangat tinggi (${overtimeHours.toFixed(1)} jam). Perlu dievaluasi untuk efisiensi biaya lembur.`);
+      }
+      if (potongan > (Number(p.basePay) || Number(p.totalRegPay) || 1) * 0.3) {
+        anomalies.push(`Potongan untuk ${name} melebihi 30% dari upah dasarnya. Harap verifikasi catatan kasbon/potongan.`);
+      }
+      if (p.daysPresent > 0 && regularHours / p.daysPresent < 5) {
+        anomalies.push(`Rata-rata jam kerja harian ${name} kurang dari 5 jam. Pastikan pencatatan jam check-in/out sudah akurat.`);
+      }
+    });
+
+    if (anomalies.length === 0) {
+      anomalies.push("Tidak terdeteksi anomali mencolok pada distribusi payroll bulan ini.");
+    }
+
+    // Recommendations
+    recommendations.push("Optimalkan pembagian shift kerja untuk menekan pengeluaran lembur yang tidak mendesak.");
+    recommendations.push("Pastikan semua tunjangan makan dan transport dikalibrasi sesuai dengan kehadiran aktual harian.");
+    if (totalLemburHours > totalRegularHours * 0.2) {
+      recommendations.push("Tingginya rasio lembur mengindikasikan perlunya penambahan tenaga kerja di jam sibuk atau reorganisasi jadwal kerja.");
+    }
+    recommendations.push("Lakukan audit berkala terhadap catatan pinjaman kasbon untuk menjaga stabilitas arus kas karyawan.");
+
+    const offlineAnalysis = `### Analisis Eksekutif Payroll - ${month} ${division ? `(Divisi: ${division})` : ''}
+
+Laporan analisis upah karyawan untuk bulan **${month}** menunjukkan total pengeluaran gaji bersih sebesar **Rp ${totalGrandSalary.toLocaleString('id-ID')}** untuk **${totalEmployees}** karyawan aktif. Rata-rata upah bersih yang diterima karyawan adalah sebesar **Rp ${avgSalary.toLocaleString('id-ID')}**, dengan pendapatan tertinggi diperoleh oleh **${highestEarnerName}** sebesar **Rp ${highestSalary.toLocaleString('id-ID')}**.
+
+#### Ringkasan Komponen Pengeluaran:
+*   **Total Jam Kerja Utama**: ${totalRegularHours.toFixed(1)} Jam
+*   **Total Pengeluaran Lembur**: Rp ${totalLemburPay.toLocaleString('id-ID')} (${totalLemburHours.toFixed(1)} Jam)
+*   **Total Tunjangan Tambahan**: Rp ${totalTunjangan.toLocaleString('id-ID')}
+*   **Total Potongan (Kasbon, BPJS, dll)**: Rp ${totalPotongan.toLocaleString('id-ID')}
+
+Secara keseluruhan, struktur payroll terlihat stabil, namun pengawasan terhadap efisiensi jam lembur perlu ditingkatkan agar margin operasional tetap terjaga dengan baik.`;
+
+    return res.json({
+      success: true,
+      analysis: offlineAnalysis,
+      average_salary: `Rp ${avgSalary.toLocaleString('id-ID')}`,
+      total_overtime_cost: `Rp ${totalLemburPay.toLocaleString('id-ID')}`,
+      highest_earner: `${highestEarnerName} - Rp ${highestSalary.toLocaleString('id-ID')}`,
+      anomalies,
+      recommendations,
+      isOfflineFallback: true
+    });
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    const simplifiedPayrolls = payrolls.map(p => ({
+      nama: p.employee?.nama || "Karyawan",
+      divisi: p.employee?.divisi || "-",
+      jabatan: p.employee?.jabatan || "-",
+      gaji_type: p.employee?.gaji_type || "per_jam",
+      hari_hadir: p.daysPresent,
+      jam_reguler: p.totalRegularHours,
+      jam_lembur: p.totalLemburHours,
+      gaji_dasar: p.basePay || p.totalRegPay,
+      gaji_lembur: p.totalLemburPay,
+      bonus_dryer: p.totalDryerBonus,
+      tunjangan: p.totalTunjangan,
+      potongan: p.totalPotongan,
+      gaji_bersih: p.grandTotalSalary
+    }));
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: {
+        parts: [
+          {
+            text: "Anda adalah pakar HR dan Analis Payroll Keuangan pintar.\n" +
+                  "Tugas Anda adalah melakukan audit dan memberikan analisis komprehensif, rekomendasi, serta mendeteksi jika ada anomali pada data gaji bulanan karyawan.\n\n" +
+                  `Bulan/Tahun Analisis: ${month}\n` +
+                  `Filter Divisi: ${division || "Semua Divisi"}\n` +
+                  `Total Karyawan: ${totalEmployees}\n` +
+                  `Total Pengeluaran Gaji: Rp ${totalGrandSalary.toLocaleString('id-ID')}\n` +
+                  `Rata-rata Gaji: Rp ${avgSalary.toLocaleString('id-ID')}\n` +
+                  `Penerima Terbesar: ${highestEarnerName} - Rp ${highestSalary.toLocaleString('id-ID')}\n\n` +
+                  "Berikut adalah data detail payroll karyawan untuk dianalisis:\n" +
+                  JSON.stringify(simplifiedPayrolls, null, 2) + "\n\n" +
+                  "Silakan analisis data tersebut dan buat:\n" +
+                  "1. analysis: Teks ulasan eksekutif dalam bahasa Indonesia terformat Markdown (gunakan subheading, bullet points, bolding). Ulas tren pengeluaran upah, perbandingan gaji divisi, efisiensi waktu kerja reguler vs lembur, dan kontribusi bonus dryer jika ada.\n" +
+                  "2. anomalies: Array string berisi poin-poin anomali penting yang terdeteksi, contoh: karyawan dengan jam lembur tidak wajar, potongan kasbon yang terlalu besar, ketimpangan upah yang ekstrem, atau data tidak konsisten lainnya.\n" +
+                  "3. recommendations: Array string berisi saran operasional taktis untuk Direktur/Owner agar pengeluaran payroll bulan depan lebih efisien, adil, dan memotivasi karyawan.\n\n" +
+                  "Berikan respons dalam format JSON yang valid."
+          }
+        ]
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            analysis: { type: Type.STRING },
+            anomalies: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            },
+            recommendations: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            }
+          },
+          required: ["analysis", "anomalies", "recommendations"]
+        }
+      }
+    });
+
+    const result = JSON.parse(response.text?.trim() || "{}");
+    return res.json({
+      success: true,
+      analysis: result.analysis,
+      average_salary: `Rp ${avgSalary.toLocaleString('id-ID')}`,
+      total_overtime_cost: `Rp ${totalLemburPay.toLocaleString('id-ID')}`,
+      highest_earner: `${highestEarnerName} - Rp ${highestSalary.toLocaleString('id-ID')}`,
+      anomalies: result.anomalies,
+      recommendations: result.recommendations,
+      isOfflineFallback: false
+    });
+
+  } catch (error: any) {
+    console.error("Error during AI payroll analysis:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Gagal memproses analisis otomatis dengan AI: " + (error.message || error)
+    });
+  }
+});
+
 // AI Suspicious Request Pattern Analysis Endpoint
 app.post("/api/analyze-suspicious-request", async (req, res) => {
   const { leaveRequest, employeeName, employeeHistory, attendanceHistory } = req.body;

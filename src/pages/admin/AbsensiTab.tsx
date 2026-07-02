@@ -87,6 +87,9 @@ export default function AbsensiTab() {
     const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
     const [showAIReportModal, setShowAIReportModal] = useState(false);
+    const [showPayrollAIModal, setShowPayrollAIModal] = useState(false);
+    const [isGeneratingPayrollAI, setIsGeneratingPayrollAI] = useState(false);
+    const [payrollAIReport, setPayrollAIReport] = useState<any>(null);
     const [reportRange, setReportRange] = useState<'weekly' | 'monthly' | 'custom'>('weekly');
     const [reportStartDate, setReportStartDate] = useState(() => {
         const d = new Date();
@@ -530,6 +533,48 @@ export default function AbsensiTab() {
             toast.error(error.message || 'Gagal menghasilkan laporan AI', { id: toastId });
         } finally {
             setIsGeneratingMonthly(false);
+        }
+    };
+
+    const handleGeneratePayrollAIReport = async () => {
+        setIsGeneratingPayrollAI(true);
+        setShowPayrollAIModal(true);
+        setPayrollAIReport(null);
+        const toastId = toast.loading('Memulai audit & analisis upah cerdas AI...');
+        try {
+            const payrolls = getPayrollData();
+            const response = await fetch('/api/generate-payroll-ai-report', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    payrolls,
+                    month: selectedMonth,
+                    division: selectedMonthDivisi
+                })
+            });
+
+            const responseText = await response.text();
+            let data: any = {};
+            try {
+                data = responseText ? JSON.parse(responseText) : {};
+            } catch (parseErr) {
+                throw new Error('Respon server tidak valid (bukan JSON).');
+            }
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Gagal berkomunikasi dengan server AI');
+            }
+
+            setPayrollAIReport(data);
+            toast.success('Analisis & Audit Gaji AI Berhasil!', { id: toastId });
+        } catch (error: any) {
+            console.error('Error generating payroll AI report:', error);
+            toast.error(error.message || 'Gagal menghasilkan laporan AI', { id: toastId });
+            setShowPayrollAIModal(false);
+        } finally {
+            setIsGeneratingPayrollAI(false);
         }
     };
 
@@ -2228,10 +2273,17 @@ export default function AbsensiTab() {
                             </div>
                             <div className="flex gap-2 self-stretch md:self-auto flex-wrap">
                                 <button
-                                    onClick={handleSeedExcelData}
-                                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer"
+                                    onClick={handleGeneratePayrollAIReport}
+                                    disabled={monthlyLoading || getPayrollData().length === 0}
+                                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                                 >
                                     <Sparkles size={14} />
+                                    <span>Analisis & Audit Gaji (AI)</span>
+                                </button>
+                                <button
+                                    onClick={handleSeedExcelData}
+                                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer"
+                                >
                                     <span>Inisialisasi Data Excel</span>
                                 </button>
                                 <button
@@ -2724,6 +2776,147 @@ export default function AbsensiTab() {
                                     </>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Payroll Analysis Modal */}
+            {showPayrollAIModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col my-8 max-h-[90vh] border border-slate-100 animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-slate-50 to-slate-100/50">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl text-white shadow-sm">
+                                    <Sparkles size={18} />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-800 text-base">Audit & Analisis Gaji Pintar (AI)</h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">Ringkasan pengeluaran upah, pencocokan lembur, dan audit anomali otomatis.</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => setShowPayrollAIModal(false)} 
+                                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-200/50 rounded-xl transition-all"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 overflow-y-auto flex-1">
+                            {isGeneratingPayrollAI && (
+                                <div className="py-20 flex flex-col items-center justify-center text-center">
+                                    <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                                    <h4 className="font-extrabold text-slate-800 text-sm">AI Sedang Melakukan Audit Gaji...</h4>
+                                    <p className="text-xs text-slate-500 mt-2 max-w-md px-4 leading-relaxed">
+                                        Menganalisis total pengeluaran, mendeteksi outlier jam lembur, memverifikasi korelasi kehadiran, dan merumuskan rekomendasi efisiensi biaya. Harap tunggu sebentar.
+                                    </p>
+                                </div>
+                            )}
+
+                            {payrollAIReport && (
+                                <div className="space-y-6">
+                                    {/* Key Metric Cards */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 flex flex-col justify-between">
+                                            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Rata-rata Gaji Bersih</span>
+                                            <span className="text-xl font-black text-indigo-900 mt-1">{payrollAIReport.average_salary}</span>
+                                            <span className="text-[10px] text-indigo-500 mt-1">Rata-rata upah dibawa pulang</span>
+                                        </div>
+                                        <div className="bg-violet-50/50 p-4 rounded-xl border border-violet-100 flex flex-col justify-between">
+                                            <span className="text-[10px] font-bold text-violet-600 uppercase tracking-wider">Total Biaya Lemburan</span>
+                                            <span className="text-xl font-black text-violet-900 mt-1">{payrollAIReport.total_overtime_cost}</span>
+                                            <span className="text-[10px] text-violet-500 mt-1">Total upah lembur bulan ini</span>
+                                        </div>
+                                        <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 flex flex-col justify-between">
+                                            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Pendapatan Tertinggi</span>
+                                            <span className="text-xl font-black text-emerald-900 mt-1 truncate" title={payrollAIReport.highest_earner}>
+                                                {payrollAIReport.highest_earner}
+                                            </span>
+                                            <span className="text-[10px] text-emerald-500 mt-1">Penerima upah tertinggi</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                        {/* Executive Analysis */}
+                                        <div className="lg:col-span-7 bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <div className="p-1 bg-indigo-100 text-indigo-700 rounded-lg">
+                                                    <Sparkles size={14} />
+                                                </div>
+                                                <span className="text-xs font-bold text-indigo-800 uppercase tracking-wider">Ulasan Eksekutif AI</span>
+                                            </div>
+                                            
+                                            <div className="prose prose-slate max-w-none text-slate-700 leading-relaxed text-xs sm:text-sm">
+                                                {payrollAIReport.analysis.split('\n').map((line: string, i: number) => {
+                                                    if (!line.trim()) return <div key={i} className="h-2"></div>;
+                                                    if (line.startsWith('### ')) {
+                                                        return <h4 key={i} className="text-sm font-bold text-slate-800 mt-4 mb-2">{line.replace('### ', '')}</h4>;
+                                                    }
+                                                    if (line.startsWith('#### ')) {
+                                                        return <h5 key={i} className="text-xs font-bold text-slate-800 mt-3 mb-1 uppercase tracking-wider">{line.replace('#### ', '')}</h5>;
+                                                    }
+                                                    if (line.startsWith('*   ') || line.startsWith('* ')) {
+                                                        return <li key={i} className="ml-4 list-disc text-slate-600 my-0.5">{line.replace(/^\*\s+/, '').replace(/^\*\s+\*\s+/, '')}</li>;
+                                                    }
+                                                    return <p key={i} className="mb-2 text-slate-600">{line}</p>;
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* Anomalies and Recommendations */}
+                                        <div className="lg:col-span-5 space-y-6">
+                                            {/* Anomalies */}
+                                            <div className="bg-rose-50/50 p-5 rounded-2xl border border-rose-100">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <div className="p-1 bg-rose-100 text-rose-700 rounded-lg">
+                                                        <AlertTriangle size={14} />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-rose-800 uppercase tracking-wider">🚨 Deteksi Anomali Gaji</span>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {payrollAIReport.anomalies.map((item: string, idx: number) => (
+                                                        <div key={idx} className="bg-white p-3 rounded-xl border border-rose-100 text-xs text-slate-700 font-medium flex items-start gap-2 shadow-sm">
+                                                            <span className="text-rose-500 font-extrabold shrink-0">•</span>
+                                                            <p className="leading-relaxed">{item}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Recommendations */}
+                                            <div className="bg-emerald-50/50 p-5 rounded-2xl border border-emerald-100">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <div className="p-1 bg-emerald-100 text-emerald-700 rounded-lg">
+                                                        <CheckCircle2 size={14} />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">💡 Rekomendasi Efisiensi & Insentif</span>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {payrollAIReport.recommendations.map((item: string, idx: number) => (
+                                                        <div key={idx} className="bg-white p-3 rounded-xl border border-emerald-100 text-xs text-slate-700 font-medium flex items-start gap-2 shadow-sm">
+                                                            <span className="text-emerald-500 font-extrabold shrink-0">•</span>
+                                                            <p className="leading-relaxed">{item}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/50">
+                            <button 
+                                onClick={() => setShowPayrollAIModal(false)}
+                                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                            >
+                                Tutup
+                            </button>
                         </div>
                     </div>
                 </div>
