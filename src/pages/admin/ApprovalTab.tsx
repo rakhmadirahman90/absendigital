@@ -1,12 +1,114 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc, addDoc, getDocs, where, limit } from 'firebase/firestore';
+import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc, addDoc, getDocs, where, limit, setDoc } from 'firebase/firestore';
 import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown, Edit, Trash2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, MapPin } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
 import { createNotification } from '../../lib/notifications';
+
+async function syncLeaveToAttendance(leaveReqId: string, leaveData: any, status: string) {
+    const { user_id, tanggal_mulai, tanggal_akhir, tipe } = leaveData;
+    
+    // First, always clean up any existing attendance records associated with this leaveReqId
+    try {
+        const q = query(collection(db, 'attendance'), where('leave_request_id', '==', leaveReqId));
+        const snap = await getDocs(q);
+        for (const docSnap of snap.docs) {
+            await deleteDoc(docSnap.ref);
+        }
+    } catch (err) {
+        console.error('Error cleaning up existing leave attendance:', err);
+    }
+
+    if (status === 'approved' && user_id && tanggal_mulai && tanggal_akhir) {
+        try {
+            // Calculate dates between tanggal_mulai and tanggal_akhir (inclusive)
+            const dates: string[] = [];
+            let current = new Date(tanggal_mulai);
+            const end = new Date(tanggal_akhir);
+            // Safety limit of max 31 days to prevent infinite loops on bad input
+            let iterations = 0;
+            while (current <= end && iterations < 31) {
+                const yyyy = current.getFullYear();
+                const mm = String(current.getMonth() + 1).padStart(2, '0');
+                const dd = String(current.getDate()).padStart(2, '0');
+                dates.push(`${yyyy}-${mm}-${dd}`);
+                current.setDate(current.getDate() + 1);
+                iterations++;
+            }
+
+            const statusStr = tipe ? (tipe.charAt(0).toUpperCase() + tipe.slice(1)) : 'Izin'; // e.g., 'Sakit', 'Izin', 'Cuti'
+            for (const date of dates) {
+                const attId = `${user_id}-${date}`;
+                await setDoc(doc(db, 'attendance', attId), {
+                    user_id,
+                    tanggal: date,
+                    status: statusStr,
+                    jam_masuk: '',
+                    jam_pulang: '',
+                    istirahat: 0,
+                    is_lembur: false,
+                    is_leave: true,
+                    leave_request_id: leaveReqId,
+                    created_at: new Date().toISOString()
+                }, { merge: true });
+            }
+        } catch (err) {
+            console.error('Error creating leave attendance records:', err);
+        }
+    }
+}
+
+async function syncOvertimeToAttendance(overtimeReqId: string, otData: any, status: string) {
+    const { user_id, tanggal, durasi_jam } = otData;
+    
+    // First, always clean up any existing attendance records associated with this overtimeReqId
+    try {
+        const q = query(collection(db, 'attendance'), where('overtime_request_id', '==', overtimeReqId));
+        const snap = await getDocs(q);
+        for (const docSnap of snap.docs) {
+            await deleteDoc(docSnap.ref);
+        }
+    } catch (err) {
+        console.error('Error cleaning up existing overtime attendance:', err);
+    }
+
+    if (status === 'approved' && user_id && tanggal) {
+        try {
+            const attId = `${user_id}-${tanggal}-lembur`;
+            const D = Number(durasi_jam) || 1;
+            
+            let istirahat = 0;
+            const startHour = 18;
+            if (D >= 4) {
+                istirahat = 2;
+            }
+            const endHour = startHour + D + istirahat;
+            
+            let jam_pulang = `${String(endHour).padStart(2, '0')}:00`;
+            if (endHour >= 24) {
+                const nextDayHour = endHour % 24;
+                jam_pulang = `${String(nextDayHour).padStart(2, '0')}:00`;
+            }
+
+            await setDoc(doc(db, 'attendance', attId), {
+                user_id,
+                tanggal,
+                status: 'Hadir',
+                jam_masuk: '18:00',
+                jam_pulang,
+                istirahat,
+                is_lembur: true,
+                overtime_request_id: overtimeReqId,
+                created_at: new Date().toISOString()
+            }, { merge: true });
+        } catch (err) {
+            console.error('Error creating overtime attendance records:', err);
+        }
+    }
+}
 
 export default function ApprovalTab() {
     const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
@@ -101,7 +203,8 @@ export default function ApprovalTab() {
                     created_at: new Date().toISOString()
                 };
 
-                await addDoc(collection(db, 'leave_requests'), payload);
+                const docRef = await addDoc(collection(db, 'leave_requests'), payload);
+                await syncLeaveToAttendance(docRef.id, payload, 'approved');
                 toast.success(`AI Berhasil! Menambahkan pengajuan ${payload.tipe} untuk ${matchedUserNama} (Disetujui otomatis).`, { id: toastId });
             } else {
                 const payload = {
@@ -114,7 +217,8 @@ export default function ApprovalTab() {
                     created_at: new Date().toISOString()
                 };
 
-                await addDoc(collection(db, 'overtime'), payload);
+                const docRef = await addDoc(collection(db, 'overtime'), payload);
+                await syncOvertimeToAttendance(docRef.id, payload, 'approved');
                 toast.success(`AI Berhasil! Menambahkan pengajuan Lembur untuk ${matchedUserNama} (Disetujui otomatis).`, { id: toastId });
             }
 
@@ -464,8 +568,10 @@ export default function ApprovalTab() {
                 let reqType = '';
                 if (collectionName === 'leave_requests') {
                     reqType = `pengajuan ${data.tipe || 'izin/sakit/cuti'}`;
+                    await syncLeaveToAttendance(id, data, status);
                 } else {
                     reqType = 'pengajuan lembur';
+                    await syncOvertimeToAttendance(id, data, status);
                 }
 
                 if (targetUserId) {
@@ -539,6 +645,12 @@ export default function ApprovalTab() {
                     status: editLeaveForm.status,
                     catatan_admin: editLeaveForm.catatan_admin.trim()
                 });
+                await syncLeaveToAttendance(item.id, {
+                    user_id: item.user_id,
+                    tanggal_mulai: editLeaveForm.tanggal_mulai,
+                    tanggal_akhir: editLeaveForm.tanggal_akhir,
+                    tipe: editLeaveForm.tipe
+                }, editLeaveForm.status);
             } else {
                 if (editOvertimeForm.durasi_jam <= 0) {
                     toast.error('Durasi jam lembur harus lebih besar dari 0.');
@@ -555,6 +667,11 @@ export default function ApprovalTab() {
                     status: editOvertimeForm.status,
                     catatan_admin: editOvertimeForm.catatan_admin.trim()
                 });
+                await syncOvertimeToAttendance(item.id, {
+                    user_id: item.user_id,
+                    tanggal: editOvertimeForm.tanggal,
+                    durasi_jam: Number(editOvertimeForm.durasi_jam)
+                }, editOvertimeForm.status);
             }
 
             if (statusChanged && item.user_id) {
@@ -586,6 +703,11 @@ export default function ApprovalTab() {
         if (!deleteData) return;
         const { id, collectionName } = deleteData;
         try {
+            if (collectionName === 'leave_requests') {
+                await syncLeaveToAttendance(id, {}, 'deleted');
+            } else {
+                await syncOvertimeToAttendance(id, {}, 'deleted');
+            }
             await deleteDoc(doc(db, collectionName, id));
             toast.success('Pengajuan berhasil dihapus');
         } catch (error) {

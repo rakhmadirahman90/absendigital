@@ -314,36 +314,32 @@ export default function AbsensiTab() {
         return () => unsubAttendance();
     }, [filterDate, filterDivisi, usersMap]);
 
-    const fetchMonthlyRecords = async () => {
+    useEffect(() => {
         if (Object.keys(usersMap).length === 0) return;
+        if (activeSubTab !== 'bulanan' && activeSubTab !== 'gaji') return;
+
         setMonthlyLoading(true);
-        try {
-            const { getDocs, query, collection, where } = await import('firebase/firestore');
-            const start = `${selectedMonth}-01`;
-            const end = `${selectedMonth}-31`;
-            const q = query(
-                collection(db, 'attendance'),
-                where('tanggal', '>=', start),
-                where('tanggal', '<=', end)
-            );
-            const snap = await getDocs(q);
+        const start = `${selectedMonth}-01`;
+        const end = `${selectedMonth}-31`;
+        const q = query(
+            collection(db, 'attendance'),
+            where('tanggal', '>=', start),
+            where('tanggal', '<=', end)
+        );
+
+        const unsubMonthly = onSnapshot(q, (snap) => {
             const records: any[] = [];
             snap.forEach(doc => {
                 records.push({ id: doc.id, ...doc.data() });
             });
             setMonthlyRecords(records);
-        } catch (error) {
-            console.error('Error fetching monthly records:', error);
-            toast.error('Gagal mengambil data absensi bulanan.');
-        } finally {
             setMonthlyLoading(false);
-        }
-    };
+        }, (error) => {
+            console.error('Error listening to monthly records:', error);
+            setMonthlyLoading(false);
+        });
 
-    useEffect(() => {
-        if (activeSubTab === 'bulanan' || activeSubTab === 'gaji') {
-            fetchMonthlyRecords();
-        }
+        return () => unsubMonthly();
     }, [selectedMonth, activeSubTab, usersMap]);
 
     const filteredMonthlyRecords = monthlyRecords.filter(r => {

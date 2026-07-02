@@ -44,6 +44,18 @@ export default function History() {
   // Interaction States
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
 
+  const getStatusBadgeStyles = (status: string) => {
+    if (status === 'Terlambat') return 'bg-rose-50 text-rose-700 border border-rose-100';
+    if (['Izin', 'Sakit', 'Cuti'].includes(status)) return 'bg-amber-50 text-amber-700 border border-amber-100';
+    return 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+  };
+
+  const getStatusDotStyles = (status: string) => {
+    if (status === 'Terlambat') return 'bg-rose-500';
+    if (['Izin', 'Sakit', 'Cuti'].includes(status)) return 'bg-amber-500';
+    return 'bg-emerald-500';
+  };
+
   useEffect(() => {
     if (!user) return;
     
@@ -513,12 +525,8 @@ export default function History() {
                           )}
                         </td>
                         <td className="p-4">
-                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${
-                            record.status === 'Terlambat'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${record.status === 'Terlambat' ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${getStatusBadgeStyles(record.status)}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${getStatusDotStyles(record.status)}`}></span>
                             <span>{record.status || 'Hadir'}</span>
                           </span>
                         </td>
@@ -556,11 +564,8 @@ export default function History() {
                         <span className="text-[10px] text-slate-400 font-mono font-medium">{record.tanggal}</span>
                       </div>
                       
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                        record.status === 'Terlambat'
-                          ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                          : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                      }`}>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${getStatusBadgeStyles(record.status)}`}>
+                        <span className={`w-1 h-1 rounded-full ${getStatusDotStyles(record.status)}`}></span>
                         <span>{record.status || 'Hadir'}</span>
                       </span>
                     </div>
@@ -705,12 +710,8 @@ export default function History() {
                 <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 border border-slate-100 p-4 rounded-xl">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Status Hari Ini</span>
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mt-1 ${
-                      selectedRecord.status === 'Terlambat'
-                        ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                        : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${selectedRecord.status === 'Terlambat' ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mt-1 ${getStatusBadgeStyles(selectedRecord.status)}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${getStatusDotStyles(selectedRecord.status)}`}></span>
                       {selectedRecord.status || 'Hadir'}
                     </span>
                   </div>
