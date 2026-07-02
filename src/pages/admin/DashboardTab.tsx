@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, query, where, onSnapshot, getDocs, limit, orderBy } from 'firebase/firestore';
-import { Users, CheckCircle, Clock, Download, BarChart2, AlertCircle, Eye, Calendar, ArrowRight, FileCheck, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Users, CheckCircle, Clock, Download, BarChart2, AlertCircle, Eye, Calendar, ArrowRight, FileCheck, CheckCircle2, RefreshCw, MessageSquare } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
@@ -20,6 +20,7 @@ export default function DashboardTab() {
   const [usersMap, setUsersMap] = useState<Record<string, any>>({});
   const [recentAttendance, setRecentAttendance] = useState<any[]>([]);
   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
+  const [waLogsCount, setWaLogsCount] = useState(0);
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -139,12 +140,22 @@ export default function DashboardTab() {
       setWeeklyData(parsedWeekly);
     });
 
+    // 6. Monitor Today's WhatsApp Reminder Logs
+    const startOfToday = new Date();
+    startOfToday.setHours(0,0,0,0);
+    const unsubWaLogs = onSnapshot(query(collection(db, 'wa_logs'), where('timestamp', '>=', startOfToday.toISOString())), (snap) => {
+      setWaLogsCount(snap.size);
+    }, (err) => {
+      console.error("Error listening to wa_logs on dashboard:", err);
+    });
+
     return () => {
       unsubUsers();
       unsubAttendance();
       unsubLeave();
       unsubLeavePending();
       unsubWeeklyTrends();
+      unsubWaLogs();
     };
   }, []);
 
@@ -302,6 +313,33 @@ export default function DashboardTab() {
             <span className="text-xs text-slate-400 font-semibold">Sisa</span>
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-slate-400" />
+        </div>
+      </div>
+
+      {/* WhatsApp Scheduled Reminder Quick Banner */}
+      <div className="bg-emerald-50 border border-emerald-200/50 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl">
+            <MessageSquare size={18} />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-slate-800">Sistem Pengingat WA Otomatis Aktif</h4>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Jadwal Senin-Minggu: <span className="font-bold text-indigo-600 font-mono">05, 06, 07, 08, 09 (Pagi)</span> & <span className="font-bold text-teal-600 font-mono">17, 18, 19, 20, 21, 22 (Sore)</span>
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-right hidden md:block">
+            <span className="text-[10px] text-slate-400 font-bold block">PENGINGAT HARI INI</span>
+            <span className="text-xs font-bold text-emerald-600 font-mono">{waLogsCount} Terkirim</span>
+          </div>
+          <Link
+            to="/admin/settings"
+            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-xl transition cursor-pointer"
+          >
+            Kelola WhatsApp
+          </Link>
         </div>
       </div>
 

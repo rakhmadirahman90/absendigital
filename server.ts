@@ -5,6 +5,9 @@ import cors from "cors";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import axios from "axios";
+import { initializeApp } from "firebase/app";
+import { initializeFirestore, collection, getDocs, query, where, addDoc, getDoc, doc, setDoc } from "firebase/firestore";
 
 const app = express();
 app.use(cors());
@@ -755,6 +758,295 @@ app.post("/api/analyze-suspicious-request", async (req, res) => {
   }
 });
 
+app.post("/api/send-wa", async (req, res) => {
+  const { waNumber, message, apiMode, apiToken } = req.body;
+
+  if (!waNumber || !message) {
+    return res.status(400).json({ success: false, error: "waNumber and message are required" });
+  }
+
+  let cleanNumber = waNumber.replace(/\D/g, '');
+  if (cleanNumber.startsWith('0')) {
+    cleanNumber = '62' + cleanNumber.substring(1);
+  } else if (cleanNumber.startsWith('8')) {
+    cleanNumber = '62' + cleanNumber;
+  }
+
+  if (apiMode === 'fonnte' && apiToken) {
+    try {
+      console.log(`[WA Proxy] Sending to Fonnte. Token length: ${apiToken.length}, Start: ${apiToken.substring(0, 3)}, End: ${apiToken.substring(apiToken.length - 3)}`);
+      
+      const params = new URLSearchParams();
+      params.append('target', cleanNumber);
+      params.append('message', message);
+      // Fonnte documentation says if target is already international, countryCode is not strictly needed or can be provided
+      params.append('countryCode', '62');
+
+      const response = await fetch('https://api.fonnte.com/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': apiToken.trim(),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params.toString()
+      });
+      
+      const data: any = await response.json();
+      console.log(`[WA Proxy] Fonnte response:`, JSON.stringify(data));
+      
+      return res.json({
+        success: !!data.status,
+        status: data.status ? 'Sukses' : `Gagal (Fonnte: ${data.reason || JSON.stringify(data)})`,
+        data: data
+      });
+    } catch (e: any) {
+      console.error('Fonnte send error on server proxy:', e.message || e);
+      return res.json({
+        success: false,
+        status: `Gagal (Koneksi: ${e.message || 'Error'})`
+      });
+    }
+  }
+
+  return res.json({
+    success: true,
+    status: 'Sukses (Simulasi)'
+  });
+});
+
+// Initialize Firebase on server side
+const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+let db: any = null;
+
+if (fs.existsSync(configPath)) {
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const firebaseApp = initializeApp(config);
+    db = initializeFirestore(firebaseApp, {
+      experimentalForceLongPolling: true,
+    }, config.firestoreDatabaseId);
+    console.log("[Firebase Server-Side] Initialized successfully");
+  } catch (err) {
+    console.error("[Firebase Server-Side] Failed to initialize:", err);
+  }
+} else {
+  console.error("[Firebase Server-Side] firebase-applet-config.json not found");
+}
+
+const getWITATime = () => {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Makassar',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  
+  const yearStr = partMap.year;
+  const monthStr = partMap.month.padStart(2, '0');
+  const dayStr = partMap.day.padStart(2, '0');
+  const dateStr = `${yearStr}-${monthStr}-${dayStr}`;
+  
+  return {
+    year: parseInt(yearStr),
+    month: parseInt(monthStr),
+    day: parseInt(dayStr),
+    hour: parseInt(partMap.hour),
+    minute: parseInt(partMap.minute),
+    dateStr
+  };
+};
+
+const sendWhatsAppMessageServer = async (waNumber: string, message: string, settings: any) => {
+  let cleanNumber = waNumber.replace(/\D/g, '');
+  if (cleanNumber.startsWith('0')) {
+    cleanNumber = '62' + cleanNumber.substring(1);
+  } else if (cleanNumber.startsWith('8')) {
+    cleanNumber = '62' + cleanNumber;
+  }
+
+  if (settings.apiMode === 'fonnte' && settings.apiToken) {
+    try {
+      const apiToken = settings.apiToken.trim();
+      const params = new URLSearchParams();
+      params.append('target', cleanNumber);
+      params.append('message', message);
+      params.append('countryCode', '62');
+
+      const response = await fetch('https://api.fonnte.com/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': apiToken,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params.toString()
+      });
+      
+      const data: any = await response.json();
+      return data.status ? 'Sukses' : `Gagal (Fonnte: ${data.reason || JSON.stringify(data)})`;
+    } catch (e: any) {
+      console.error('Fonnte send error on server:', e.message || e);
+      return `Gagal (Koneksi: ${e.message || 'Error'})`;
+    }
+  }
+  return 'Sukses (Simulasi)';
+};
+
+async function checkAndRunScheduler() {
+  if (!db) return;
+  
+  try {
+    const wita = getWITATime();
+    const hour = wita.hour;
+    const dateStr = wita.dateStr;
+    
+    // Fetch WhatsApp Settings
+    const settingsDocRef = doc(db, 'settings', 'wa_reminder_settings');
+    const settingsSnap = await getDoc(settingsDocRef);
+    if (!settingsSnap.exists()) {
+      return;
+    }
+    
+    const settings = settingsSnap.data();
+    if (!settings.enabled) {
+      return;
+    }
+    
+    const morningHours = settings.morningHours || [5, 6, 7, 8, 9];
+    const eveningHours = settings.eveningHours || [17, 18, 19, 20, 21, 22];
+    
+    const isMorning = morningHours.includes(hour);
+    const isEvening = eveningHours.includes(hour);
+    
+    if (!isMorning && !isEvening) {
+      return;
+    }
+    
+    // Check if already triggered for this hour of this date
+    const triggerId = `${dateStr}_${hour.toString().padStart(2, '0')}`;
+    const triggerDocRef = doc(db, 'wa_scheduled_triggers', triggerId);
+    const triggerSnap = await getDoc(triggerDocRef);
+    
+    if (triggerSnap.exists()) {
+      return;
+    }
+    
+    // Mark as running/started to avoid duplicate triggers
+    await setDoc(triggerDocRef, {
+      status: 'running',
+      timestamp: new Date().toISOString(),
+      hour,
+      dateStr
+    });
+    
+    console.log(`[WA Scheduler] Running reminder for trigger: ${triggerId}`);
+    
+    // 1. Fetch all employees
+    const usersQ = query(collection(db, 'users'), where('role', '==', 'karyawan'));
+    const usersSnap = await getDocs(usersQ);
+    const employees: any[] = [];
+    usersSnap.forEach(d => {
+      employees.push({ id: d.id, ...d.data() });
+    });
+    
+    if (employees.length === 0) {
+      console.log("[WA Scheduler] No employees found, marking completed.");
+      await setDoc(triggerDocRef, {
+        status: 'completed',
+        reason: 'no employees',
+        timestamp: new Date().toISOString()
+      }, { merge: true });
+      return;
+    }
+    
+    // 2. Fetch today's attendance
+    const attendanceQ = query(collection(db, 'attendance'), where('tanggal', '==', dateStr));
+    const attendanceSnap = await getDocs(attendanceQ);
+    const attendanceMap: Record<string, any> = {};
+    attendanceSnap.forEach(d => {
+      const data = d.data();
+      attendanceMap[data.user_id] = data;
+    });
+    
+    // 3. Fetch approved leave/cuti/sakit for today
+    const leaveQ = query(collection(db, 'leave_requests'), where('tanggal_mulai', '<=', dateStr));
+    const leaveSnap = await getDocs(leaveQ);
+    const onLeaveSet = new Set<string>();
+    leaveSnap.forEach(d => {
+      const data = d.data();
+      if (data.status === 'approved' && data.tanggal_akhir >= dateStr) {
+        onLeaveSet.add(data.user_id);
+      }
+    });
+    
+    const displayHour = `${hour.toString().padStart(2, '0')}:00`;
+    let countDispatched = 0;
+    
+    for (const emp of employees) {
+      if (onLeaveSet.has(emp.id)) {
+        continue;
+      }
+      
+      const att = attendanceMap[emp.id];
+      let shouldRemind = false;
+      let template = '';
+      let typeLabel = '';
+      
+      if (isMorning) {
+        if (!att || !att.jam_masuk) {
+          shouldRemind = true;
+          template = settings.morningTemplate || 'Halo *{nama}*, jangan lupa untuk melakukan presensi MASUK hari ini pada jam {jam} WITA melalui aplikasi US BILIBILI HADIR 162. Tetap semangat kerja! 💪';
+          typeLabel = 'auto_pagi';
+        }
+      } else if (isEvening) {
+        if (att && att.jam_masuk && !att.jam_pulang) {
+          shouldRemind = true;
+          template = settings.eveningTemplate || 'Halo *{nama}*, jangan lupa untuk melakukan presensi PULANG hari ini pada jam {jam} WITA melalui aplikasi US BILIBILI HADIR 162. Selamat istirahat dan hati-hati di jalan! 🏠🚗';
+          typeLabel = 'auto_sore';
+        }
+      }
+      
+      if (shouldRemind && emp.waNumber) {
+        const formattedMsg = template
+          .replace(/{nama}/g, emp.nama)
+          .replace(/{jam}/g, displayHour)
+          .replace(/{jenis}/g, isMorning ? 'MASUK' : 'PULANG');
+        
+        const status = await sendWhatsAppMessageServer(emp.waNumber, formattedMsg, settings);
+        
+        await addDoc(collection(db, 'wa_logs'), {
+          waNumber: emp.waNumber.replace(/\D/g, ''),
+          nama: emp.nama,
+          message: formattedMsg,
+          type: typeLabel,
+          triggerTime: displayHour,
+          status: status,
+          timestamp: new Date().toISOString()
+        });
+        
+        countDispatched++;
+      }
+    }
+    
+    await setDoc(triggerDocRef, {
+      status: 'completed',
+      dispatchedCount: countDispatched,
+      timestamp: new Date().toISOString()
+    }, { merge: true });
+    
+    console.log(`[WA Scheduler] Trigger ${triggerId} processed. Dispatched: ${countDispatched}`);
+  } catch (err: any) {
+    console.error("[WA Scheduler] Error executing scheduler:", err);
+  }
+}
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -768,6 +1060,38 @@ async function startServer() {
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  }
+
+  if (db) {
+    setTimeout(async () => {
+      console.log("[WA Scheduler] Auto-seeding Fonnte API token and configuration...");
+      try {
+        const settingsDocRef = doc(db, 'settings', 'wa_reminder_settings');
+        const settingsSnap = await getDoc(settingsDocRef);
+        const existingData = settingsSnap.exists() ? settingsSnap.data() : {};
+        
+        const currentToken = existingData.apiToken;
+        const defaultToken = 'iJKgQV7XBzgWmoKUJqYv';
+        const finalToken = currentToken || defaultToken;
+        
+        await setDoc(settingsDocRef, {
+          enabled: existingData.enabled !== undefined ? existingData.enabled : true,
+          apiMode: existingData.apiMode || 'fonnte',
+          apiToken: finalToken,
+          morningHours: existingData.morningHours || [5, 6, 7, 8, 9],
+          eveningHours: existingData.eveningHours || [17, 18, 19, 20, 21, 22],
+          morningTemplate: existingData.morningTemplate || 'Halo *{nama}*, jangan lupa untuk melakukan presensi MASUK hari ini pada jam {jam} WITA melalui aplikasi US BILIBILI HADIR 162. Tetap semangat kerja! 💪',
+          eveningTemplate: existingData.eveningTemplate || 'Halo *{nama}*, jangan lupa untuk melakukan presensi PULANG hari ini pada jam {jam} WITA melalui aplikasi US BILIBILI HADIR 162. Selamat istirahat dan hati-hati di jalan! 🏠🚗'
+        }, { merge: true });
+        console.log("[WA Scheduler] Fonnte API settings loaded/auto-seeded successfully.");
+      } catch (err) {
+        console.error("[WA Scheduler] Failed to auto-seed Fonnte settings:", err);
+      }
+
+      console.log("[WA Scheduler] Starting automated background checker...");
+      checkAndRunScheduler();
+    }, 5000);
+    setInterval(checkAndRunScheduler, 60000);
   }
 
   app.listen(PORT, "0.0.0.0", () => {
