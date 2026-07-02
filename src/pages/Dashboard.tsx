@@ -58,6 +58,9 @@ export default function Dashboard() {
     daysPresent: 0
   });
 
+  const [officialPayslips, setOfficialPayslips] = useState<any[]>([]);
+  const [activeSalaryTab, setActiveSalaryTab] = useState<'estimasi' | 'slip'>('estimasi');
+
   // Profile update states
   const [isEditing, setIsEditing] = useState(false);
   const [editNama, setEditNama] = useState('');
@@ -217,6 +220,27 @@ export default function Dashboard() {
   }, [user, dbUser]);
 
   useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'payrolls'),
+      where('user_id', '==', user.uid)
+    );
+    const unsubPayrolls = onSnapshot(q, (snap) => {
+      const slips: any[] = [];
+      snap.forEach(doc => {
+        const data = doc.data();
+        if (data.status === 'approved' || data.status === 'paid') {
+          slips.push({ id: doc.id, ...data });
+        }
+      });
+      setOfficialPayslips(slips.sort((a, b) => b.bulan.localeCompare(a.bulan)));
+    }, (error) => {
+      console.error("Error listening to user payrolls:", error);
+    });
+    return () => unsubPayrolls();
+  }, [user]);
+
+  useEffect(() => {
     const checkLocation = async () => {
       try {
         const officeDocRef = doc(db, 'settings', 'office_location');
@@ -352,6 +376,241 @@ export default function Dashboard() {
     } finally {
       setUpdating(false);
     }
+  };
+
+  const handlePrintOfficialSlip = (slip: any) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Gagal membuka jendela cetak. Pastikan pop-up diperbolehkan.');
+      return;
+    }
+
+    const currentMonthName = format(new Date(slip.bulan + "-02"), 'MMMM yyyy', { locale: id });
+    
+    // Fallbacks if some metadata isn't frozen yet
+    const nama = slip.employee_nama || dbUser?.nama || 'Karyawan';
+    const jabatan = slip.employee_jabatan || dbUser?.jabatan || '-';
+    const divisi = slip.employee_divisi || dbUser?.divisi || '-';
+    const isMonthly = (slip.employee_gaji_type || dbUser?.gaji_type) === 'per_bulan';
+    const ratePerJam = slip.employee_gaji_per_jam || dbUser?.gaji_per_jam || 14000;
+    const rateLembur = slip.employee_gaji_lembur_per_jam || dbUser?.gaji_lembur_per_jam || 14000;
+    const hasBonusDryer = slip.employee_bonus_dryer_1 !== undefined ? slip.employee_bonus_dryer_1 : dbUser?.bonus_dryer_1;
+
+    // Sum up the grand total salary
+    const computedGrandTotal = (slip.grandTotalSalary !== undefined) ? slip.grandTotalSalary : 
+      ((slip.basePay || 0) + (slip.totalRegPay || 0) + (slip.totalLemburPay || 0) + (slip.totalDryerBonus || 0) +
+      ((slip.tunjangan_makan || 0) + (slip.tunjangan_jabatan || 0) + (slip.tunjangan_transport || 0)) -
+      ((slip.potongan_kasbon || 0) + (slip.potongan_bpjs || 0) + (slip.potongan_lain || 0)));
+
+    printWindow.document.write(`
+      <html>
+      <head>
+          <title>Slip Gaji Resmi - ${nama}</title>
+          <style>
+              body {
+                  font-family: 'Courier New', Courier, monospace;
+                  padding: 40px;
+                  color: #000;
+                  background: #fff;
+                  max-width: 800px;
+                  margin: auto;
+              }
+              .header {
+                  text-align: center;
+                  border-bottom: 2px dashed #000;
+                  padding-bottom: 20px;
+                  margin-bottom: 25px;
+              }
+              .company-name {
+                  font-size: 20px;
+                  font-weight: bold;
+              }
+              .title {
+                  font-size: 16px;
+                  margin-top: 5px;
+              }
+              .meta-grid {
+                  display: grid;
+                  grid-template-columns: 1fr 1fr;
+                  margin-bottom: 20px;
+                  font-size: 13px;
+              }
+              .table {
+                  width: 100%;
+                  border-collapse: collapse;
+                  margin-top: 15px;
+                  margin-bottom: 25px;
+              }
+              .table th, .table td {
+                  padding: 8px;
+                  text-align: left;
+                  border-bottom: 1px dashed #000;
+                  font-size: 13px;
+              }
+              .table th {
+                  font-weight: bold;
+              }
+              .total-box {
+                  border-top: 2px dashed #000;
+                  border-bottom: 2px dashed #000;
+                  padding: 15px 10px;
+                  font-size: 15px;
+                  font-weight: bold;
+                  display: flex;
+                  justify-content: space-between;
+                  margin-bottom: 30px;
+              }
+              .footer-sig {
+                  display: flex;
+                  justify-content: space-between;
+                  margin-top: 50px;
+                  font-size: 13px;
+              }
+              .sig-space {
+                  height: 70px;
+              }
+              @media print {
+                  body { padding: 10px; }
+              }
+          </style>
+      </head>
+      <body>
+          <div class="header">
+              <div class="company-name">HADIR 162 - LAUNDRY & DRYING SERVICES</div>
+              <div class="title">SLIP GAJI RESMI KARYAWAN</div>
+              <div style="font-size: 12px; margin-top: 4px;">Periode Pembayaran: ${currentMonthName}</div>
+          </div>
+
+          <div class="meta-grid">
+              <div>
+                  <strong>Nama Karyawan :</strong> ${nama}<br>
+                  <strong>Jabatan       :</strong> ${jabatan}<br>
+                  <strong>Divisi        :</strong> ${divisi}
+              </div>
+              <div style="text-align: right;">
+                  <strong>Sistem Gaji   :</strong> ${isMonthly ? 'Bulanan' : 'Per Jam'}<br>
+                  <strong>Hari Hadir    :</strong> ${slip.daysPresent || 0} Hari<br>
+                  <strong>Status Gaji   :</strong> <span style="font-weight: bold; text-transform: uppercase; color: ${slip.status === 'paid' ? '#059669' : '#2563eb'}">${slip.status || 'approved'}</span><br>
+                  <strong>Tanggal Cetak :</strong> ${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}
+              </div>
+          </div>
+
+          <h3>Rincian Perhitungan Upah</h3>
+          <table class="table">
+              <thead>
+                  <tr>
+                      <th>Komponen Gaji</th>
+                      <th>Kuantitas / Tarif</th>
+                      <th style="text-align: right;">Jumlah</th>
+                  </tr>
+              </thead>
+              <tbody>
+                  ${isMonthly ? `
+                      <tr>
+                          <td>Gaji Pokok Bulanan</td>
+                          <td>Fixed (1 Bulan)</td>
+                          <td style="text-align: right;">Rp ${(slip.basePay || 0).toLocaleString('id-ID')}</td>
+                      </tr>
+                  ` : `
+                      <tr>
+                          <td>Gaji Kerja Reguler</td>
+                          <td>${(slip.totalRegularHours || 0).toFixed(1)} Jam × Rp ${ratePerJam.toLocaleString('id-ID')}/jam</td>
+                          <td style="text-align: right;">Rp ${(slip.totalRegPay || 0).toLocaleString('id-ID')}</td>
+                      </tr>
+                  `}
+                  <tr>
+                      <td>Uang Lembur (Overtime)</td>
+                      <td>${(slip.totalLemburHours || 0).toFixed(1)} Jam × Rp ${rateLembur.toLocaleString('id-ID')}/jam</td>
+                      <td style="text-align: right;">Rp ${(slip.totalLemburPay || 0).toLocaleString('id-ID')}</td>
+                  </tr>
+                  ${hasBonusDryer ? `
+                      <tr>
+                          <td>Insentif Bonus Dryer 1 Aktif</td>
+                          <td>Hadir Dryer 1 Menyala</td>
+                          <td style="text-align: right;">Rp ${(slip.totalDryerBonus || 0).toLocaleString('id-ID')}</td>
+                      </tr>
+                  ` : ''}
+                  ${slip.tunjangan_makan ? `
+                      <tr>
+                          <td>Tunjangan Makan</td>
+                          <td>Penyesuaian Bulanan</td>
+                          <td style="text-align: right; color: #059669;">+Rp ${slip.tunjangan_makan.toLocaleString('id-ID')}</td>
+                      </tr>
+                  ` : ''}
+                  ${slip.tunjangan_jabatan ? `
+                      <tr>
+                          <td>Tunjangan Jabatan</td>
+                          <td>Penyesuaian Bulanan</td>
+                          <td style="text-align: right; color: #059669;">+Rp ${slip.tunjangan_jabatan.toLocaleString('id-ID')}</td>
+                      </tr>
+                  ` : ''}
+                  ${slip.tunjangan_transport ? `
+                      <tr>
+                          <td>Tunjangan Transport</td>
+                          <td>Penyesuaian Bulanan</td>
+                          <td style="text-align: right; color: #059669;">+Rp ${slip.tunjangan_transport.toLocaleString('id-ID')}</td>
+                      </tr>
+                  ` : ''}
+                  ${slip.potongan_kasbon ? `
+                      <tr>
+                          <td>Potongan Kasbon / Pinjaman</td>
+                          <td>Penyesuaian Bulanan</td>
+                          <td style="text-align: right; color: #dc2626;">-Rp ${slip.potongan_kasbon.toLocaleString('id-ID')}</td>
+                      </tr>
+                  ` : ''}
+                  ${slip.potongan_bpjs ? `
+                      <tr>
+                          <td>Potongan BPJS</td>
+                          <td>Penyesuaian Bulanan</td>
+                          <td style="text-align: right; color: #dc2626;">-Rp ${slip.potongan_bpjs.toLocaleString('id-ID')}</td>
+                      </tr>
+                  ` : ''}
+                  ${slip.potongan_lain ? `
+                      <tr>
+                          <td>Potongan Lain-lain</td>
+                          <td>Penyesuaian Bulanan</td>
+                          <td style="text-align: right; color: #dc2626;">-Rp ${slip.potongan_lain.toLocaleString('id-ID')}</td>
+                      </tr>
+                  ` : ''}
+              </tbody>
+          </table>
+
+          <div class="total-box">
+              <span>TOTAL GAJI DITERIMA (TAKE HOME PAY)</span>
+              <span>Rp ${computedGrandTotal.toLocaleString('id-ID')}</span>
+          </div>
+
+          ${slip.catatan ? `
+              <div style="font-size: 11px; margin-top: 15px; margin-bottom: 25px; border: 1px dashed #000; padding: 10px; background: #fafafa; border-radius: 4px;">
+                  <strong>Catatan Slip:</strong> ${slip.catatan}
+              </div>
+          ` : ''}
+
+          <div class="footer-sig">
+              <div style="text-align: center; width: 200px;">
+                  Penerima,<br><br>
+                  <div class="sig-space"></div>
+                  ( ____________________ )<br>
+                  ${nama}
+              </div>
+              <div style="text-align: center; width: 200px;">
+                  Mengetahui,<br>
+                  Manajer Keuangan / Admin<br>
+                  <div class="sig-space"></div>
+                  ( ____________________ )<br>
+                  Hadir 162 Admin
+              </div>
+          </div>
+
+          <script>
+              window.onload = function() {
+                  window.print();
+              }
+          </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const toggleTheme = () => {
@@ -563,90 +822,194 @@ export default function Dashboard() {
 
       {/* Salary & Payroll Card */}
       <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg}`}>
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4 mb-6">
           <div className="flex items-center space-x-3">
             <div className={`p-2 rounded-lg ${isDaytime ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/20'}`}>
               <span className="text-lg">💰</span>
             </div>
             <div>
-              <h3 className={`text-lg font-bold ${themeTextVal}`}>Estimasi Gaji & Upah Kerja</h3>
-              <p className="text-[11px] text-slate-400 font-medium">Bulan Berjalan: {format(new Date(), 'MMMM yyyy', { locale: id })}</p>
+              <h3 className={`text-lg font-bold ${themeTextVal}`}>Fitur Gaji & Payroll</h3>
+              <p className="text-[11px] text-slate-400 font-medium">Sistem Pengupahan Resmi Hadir 162</p>
             </div>
           </div>
-          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full uppercase tracking-wider font-mono">
-            {dbUser.gaji_type === 'per_bulan' ? 'Sistem Bulanan' : 'Sistem Per Jam'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-          {/* Main Earnings */}
-          <div className={`p-4 rounded-xl border col-span-1 md:col-span-2 flex flex-col justify-between ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
-            <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Estimasi Pendapatan Kotor</span>
-            <span className="text-2xl md:text-3xl font-black text-emerald-600 font-mono mt-2 block">
-              Rp {(mySalaryStats.estimatedSalary || 0).toLocaleString('id-ID')}
-            </span>
-            <span className="text-[10px] text-slate-400 block mt-2">
-              *Belum termasuk potongan pinjaman/potongan absensi manual dari admin.
-            </span>
-          </div>
-
-          {/* Breakdown Stats */}
-          <div className={`p-4 rounded-xl border ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
-            <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Jam Kerja Reguler</span>
-            <span className={`text-xl font-bold font-mono mt-2 block ${themeTextVal}`}>
-              {(mySalaryStats.totalRegularHours || 0).toFixed(1)} <span className="text-xs font-sans font-normal text-slate-400">Jam</span>
-            </span>
-            <span className="text-[10px] text-slate-400 block mt-1">
-              {dbUser.gaji_type === 'per_bulan' 
-                ? 'Termasuk gaji pokok bulanan' 
-                : `Tarif: Rp ${(dbUser.gaji_per_jam || 14000).toLocaleString('id-ID')}/jam`}
-            </span>
-          </div>
-
-          <div className={`p-4 rounded-xl border ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
-            <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Lembur (Overtime)</span>
-            <span className="text-xl font-bold font-mono text-amber-500 mt-2 block">
-              {(mySalaryStats.totalLemburHours || 0).toFixed(1)} <span className="text-xs font-sans font-normal text-slate-400">Jam</span>
-            </span>
-            <span className="text-[10px] text-slate-400 block mt-1">
-              Tarif: Rp ${(dbUser.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')}/jam
-            </span>
+          
+          {/* Sub-Tabs Switcher */}
+          <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl text-xs font-bold self-stretch sm:self-auto">
+            <button
+              onClick={() => setActiveSalaryTab('estimasi')}
+              className={`flex-1 sm:flex-initial px-4 py-1.5 rounded-lg transition-all cursor-pointer ${
+                activeSalaryTab === 'estimasi'
+                  ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Estimasi Bulan Ini
+            </button>
+            <button
+              onClick={() => setActiveSalaryTab('slip')}
+              className={`flex-1 sm:flex-initial px-4 py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                activeSalaryTab === 'slip'
+                  ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Slip Gaji Resmi
+              {officialPayslips.length > 0 && (
+                <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                  {officialPayslips.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Detailed Breakdown list */}
-        <div className={`mt-6 p-4 rounded-xl border border-dashed text-xs space-y-2.5 ${isDaytime ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/20 border-slate-800'}`}>
-          <div className="flex justify-between items-center text-[11px] font-bold text-slate-400 uppercase tracking-wider pb-1.5 border-b border-slate-100/50">
-            <span>Komponen Upah</span>
-            <span>Jumlah</span>
-          </div>
-          {dbUser.gaji_type === 'per_bulan' && (
-            <div className="flex justify-between items-center">
-              <span className={themeTextLabel}>Gaji Pokok Bulanan</span>
-              <span className={`font-mono font-bold ${themeTextVal}`}>Rp {(dbUser.gaji_bulanan || 0).toLocaleString('id-ID')}</span>
+        {activeSalaryTab === 'estimasi' ? (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Estimasi Berjalan</span>
+              <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 px-2.5 py-1 rounded-full uppercase tracking-wider font-mono">
+                {dbUser.gaji_type === 'per_bulan' ? 'Sistem Bulanan' : 'Sistem Per Jam'}
+              </span>
             </div>
-          )}
-          {dbUser.gaji_type !== 'per_bulan' && (
-            <div className="flex justify-between items-center">
-              <span className={themeTextLabel}>Gaji Pokok Per Jam ({(mySalaryStats.totalRegularHours || 0).toFixed(1)} jam × Rp {(dbUser.gaji_per_jam || 14000).toLocaleString('id-ID')})</span>
-              <span className={`font-mono font-bold ${themeTextVal}`}>Rp {((mySalaryStats.totalRegularHours || 0) * (dbUser.gaji_per_jam || 14000)).toLocaleString('id-ID')}</span>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Main Earnings */}
+              <div className={`p-4 rounded-xl border col-span-1 md:col-span-2 flex flex-col justify-between ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
+                <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Estimasi Pendapatan Kotor</span>
+                <span className="text-2xl md:text-3xl font-black text-emerald-600 font-mono mt-2 block">
+                  Rp {(mySalaryStats.estimatedSalary || 0).toLocaleString('id-ID')}
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-2">
+                  *Belum termasuk penyesuaian tunjangan resmi & potongan manual dari admin.
+                </span>
+              </div>
+
+              {/* Breakdown Stats */}
+              <div className={`p-4 rounded-xl border ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
+                <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Jam Kerja Reguler</span>
+                <span className={`text-xl font-bold font-mono mt-2 block ${themeTextVal}`}>
+                  {(mySalaryStats.totalRegularHours || 0).toFixed(1)} <span className="text-xs font-sans font-normal text-slate-400">Jam</span>
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-1">
+                  {dbUser.gaji_type === 'per_bulan' 
+                    ? 'Termasuk gaji pokok bulanan' 
+                    : `Tarif: Rp ${(dbUser.gaji_per_jam || 14000).toLocaleString('id-ID')}/jam`}
+                </span>
+              </div>
+
+              <div className={`p-4 rounded-xl border ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
+                <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Lembur (Overtime)</span>
+                <span className="text-xl font-bold font-mono text-amber-500 mt-2 block">
+                  {(mySalaryStats.totalLemburHours || 0).toFixed(1)} <span className="text-xs font-sans font-normal text-slate-400">Jam</span>
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-1">
+                  Tarif: Rp {(dbUser.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')}/jam
+                </span>
+              </div>
             </div>
-          )}
-          <div className="flex justify-between items-center">
-            <span className={themeTextLabel}>Upah Lembur ({(mySalaryStats.totalLemburHours || 0).toFixed(1)} jam × Rp {(dbUser.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')})</span>
-            <span className={`font-mono font-bold text-amber-500`}>Rp {((mySalaryStats.totalLemburHours || 0) * (dbUser.gaji_lembur_per_jam || 14000)).toLocaleString('id-ID')}</span>
-          </div>
-          {dbUser.bonus_dryer_1 && (
-            <div className="flex justify-between items-center">
-              <span className={themeTextLabel}>Bonus Insentif Dryer 1 Aktif</span>
-              <span className="font-mono font-bold text-emerald-500">+Rp {(mySalaryStats.totalDryerBonus || 0).toLocaleString('id-ID')}</span>
+
+            {/* Detailed Breakdown list */}
+            <div className={`mt-6 p-4 rounded-xl border border-dashed text-xs space-y-2.5 ${isDaytime ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/20 border-slate-800'}`}>
+              <div className="flex justify-between items-center text-[11px] font-bold text-slate-400 uppercase tracking-wider pb-1.5 border-b border-slate-100/50">
+                <span>Komponen Upah</span>
+                <span>Jumlah</span>
+              </div>
+              {dbUser.gaji_type === 'per_bulan' && (
+                <div className="flex justify-between items-center">
+                  <span className={themeTextLabel}>Gaji Pokok Bulanan</span>
+                  <span className={`font-mono font-bold ${themeTextVal}`}>Rp {(dbUser.gaji_bulanan || 0).toLocaleString('id-ID')}</span>
+                </div>
+              )}
+              {dbUser.gaji_type !== 'per_bulan' && (
+                <div className="flex justify-between items-center">
+                  <span className={themeTextLabel}>Gaji Pokok Per Jam ({(mySalaryStats.totalRegularHours || 0).toFixed(1)} jam × Rp {(dbUser.gaji_per_jam || 14000).toLocaleString('id-ID')})</span>
+                  <span className={`font-mono font-bold ${themeTextVal}`}>Rp {((mySalaryStats.totalRegularHours || 0) * (dbUser.gaji_per_jam || 14000)).toLocaleString('id-ID')}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center">
+                <span className={themeTextLabel}>Upah Lembur ({(mySalaryStats.totalLemburHours || 0).toFixed(1)} jam × Rp {(dbUser.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')})</span>
+                <span className={`font-mono font-bold text-amber-500`}>Rp {((mySalaryStats.totalLemburHours || 0) * (dbUser.gaji_lembur_per_jam || 14000)).toLocaleString('id-ID')}</span>
+              </div>
+              {dbUser.bonus_dryer_1 && (
+                <div className="flex justify-between items-center">
+                  <span className={themeTextLabel}>Bonus Insentif Dryer 1 Aktif</span>
+                  <span className="font-mono font-bold text-emerald-500">+Rp {(mySalaryStats.totalDryerBonus || 0).toLocaleString('id-ID')}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center pt-2.5 border-t border-slate-100/50">
+                <span className={`font-bold ${themeTextVal}`}>Kehadiran Bulan Ini</span>
+                <span className={`font-mono font-bold ${themeTextVal}`}>{mySalaryStats.daysPresent || 0} Hari Masuk Kerja</span>
+              </div>
             </div>
-          )}
-          <div className="flex justify-between items-center pt-2.5 border-t border-slate-100/50">
-            <span className={`font-bold ${themeTextVal}`}>Kehadiran Bulan Ini</span>
-            <span className={`font-mono font-bold ${themeTextVal}`}>{mySalaryStats.daysPresent || 0} Hari Masuk Kerja</span>
           </div>
-        </div>
+        ) : (
+          /* Official Payslips History */
+          <div className="space-y-4">
+            {officialPayslips.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 bg-slate-50 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-200 dark:border-slate-800">
+                <p className="text-xs font-medium">Belum ada slip gaji resmi yang diterbitkan oleh manajemen untuk Anda.</p>
+                <p className="text-[10px] text-slate-400 mt-1">Selesai bulan berjalan, manajemen HRD akan mengumumkan dan mempublikasikan slip gaji Anda di sini.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {officialPayslips.map((slip) => {
+                  const computedGrandTotal = (slip.grandTotalSalary !== undefined) ? slip.grandTotalSalary : 
+                    ((slip.basePay || 0) + (slip.totalRegPay || 0) + (slip.totalLemburPay || 0) + (slip.totalDryerBonus || 0) +
+                    ((slip.tunjangan_makan || 0) + (slip.tunjangan_jabatan || 0) + (slip.tunjangan_transport || 0)) -
+                    ((slip.potongan_kasbon || 0) + (slip.potongan_bpjs || 0) + (slip.potongan_lain || 0)));
+
+                  return (
+                    <div key={slip.id} className={`p-4 rounded-xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${isDaytime ? 'bg-slate-50/50 border-slate-100' : 'bg-slate-950/30 border-slate-800'}`}>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-slate-800 dark:text-white">
+                            {format(new Date(slip.bulan + "-02"), 'MMMM yyyy', { locale: id })}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
+                            slip.status === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {slip.status === 'paid' ? '💵 Lunas / Dibayar' : '✅ Disetujui'}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-[10px] text-slate-400">
+                          <div>Gaji Pokok: <span className="font-semibold text-slate-700 dark:text-slate-300">Rp {(slip.basePay || 0).toLocaleString('id-ID')}</span></div>
+                          <div>Reguler: <span className="font-semibold text-slate-700 dark:text-slate-300">Rp {(slip.totalRegPay || 0).toLocaleString('id-ID')}</span></div>
+                          <div>Lembur: <span className="font-semibold text-slate-700 dark:text-slate-300">Rp {(slip.totalLemburPay || 0).toLocaleString('id-ID')}</span></div>
+                          <div>Hadir: <span className="font-semibold text-slate-700 dark:text-slate-300">{slip.daysPresent || 0} Hari</span></div>
+                          {((slip.tunjangan_makan || 0) + (slip.tunjangan_jabatan || 0) + (slip.tunjangan_transport || 0)) > 0 && (
+                            <div>Tunjangan: <span className="font-semibold text-emerald-600">+Rp {((slip.tunjangan_makan || 0) + (slip.tunjangan_jabatan || 0) + (slip.tunjangan_transport || 0)).toLocaleString('id-ID')}</span></div>
+                          )}
+                          {((slip.potongan_kasbon || 0) + (slip.potongan_bpjs || 0) + (slip.potongan_lain || 0)) > 0 && (
+                            <div>Potongan: <span className="font-semibold text-rose-600">-Rp {((slip.potongan_kasbon || 0) + (slip.potongan_bpjs || 0) + (slip.potongan_lain || 0)).toLocaleString('id-ID')}</span></div>
+                          )}
+                        </div>
+                        {slip.catatan && (
+                          <p className="text-[10px] italic text-slate-400 mt-1.5 dark:text-slate-500">Catatan HRD: "{slip.catatan}"</p>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end border-t dark:border-slate-800 md:border-t-0 pt-2.5 md:pt-0">
+                        <div className="text-left md:text-right">
+                          <span className="text-[9px] text-slate-400 block uppercase font-bold tracking-wider">Total Bersih</span>
+                          <span className="text-sm font-extrabold text-blue-600 font-mono">
+                            Rp {computedGrandTotal.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handlePrintOfficialSlip(slip)}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-[10px] shadow-sm cursor-pointer select-none active:scale-95 transition-all shrink-0"
+                        >
+                          Cetak Slip (PDF)
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Profil Saya Card */}

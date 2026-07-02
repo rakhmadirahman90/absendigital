@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter, Printer, Download, Sparkles } from 'lucide-react';
@@ -31,6 +31,20 @@ export default function AbsensiTab() {
     const [monthlyLoading, setMonthlyLoading] = useState(false);
     const [monthlyReportData, setMonthlyReportData] = useState<any>(null);
     const [isGeneratingMonthly, setIsGeneratingMonthly] = useState(false);
+    
+    // Monthly payroll adjustments state
+    const [payrollsMap, setPayrollsMap] = useState<Record<string, any>>({});
+    const [savingAdjustments, setSavingAdjustments] = useState(false);
+    const [adjustmentsForm, setAdjustmentsForm] = useState({
+        tunjangan_makan: 0,
+        tunjangan_jabatan: 0,
+        tunjangan_transport: 0,
+        potongan_kasbon: 0,
+        potongan_bpjs: 0,
+        potongan_lain: 0,
+        catatan: '',
+        status: 'draft'
+    });
     
     const [payrollSearch, setPayrollSearch] = useState('');
     const [selectedEmpPayrollDetail, setSelectedEmpPayrollDetail] = useState<any>(null);
@@ -339,8 +353,119 @@ export default function AbsensiTab() {
             setMonthlyLoading(false);
         });
 
-        return () => unsubMonthly();
+        // Listen to payroll adjustments for this month
+        const qPayrolls = query(
+            collection(db, 'payrolls'),
+            where('bulan', '==', selectedMonth)
+        );
+        const unsubPayrolls = onSnapshot(qPayrolls, (snap) => {
+            const map: Record<string, any> = {};
+            snap.forEach(doc => {
+                const data = doc.data();
+                map[data.user_id] = { id: doc.id, ...data };
+            });
+            setPayrollsMap(map);
+        }, (error) => {
+            console.error('Error listening to payrolls:', error);
+        });
+
+        return () => {
+            unsubMonthly();
+            unsubPayrolls();
+        };
     }, [selectedMonth, activeSubTab, usersMap]);
+
+    const lastOpenedIdRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (selectedEmpPayrollDetail) {
+            const currentId = `${selectedEmpPayrollDetail.employee.id}-${selectedMonth}`;
+            if (lastOpenedIdRef.current !== currentId) {
+                lastOpenedIdRef.current = currentId;
+                setAdjustmentsForm({
+                    tunjangan_makan: selectedEmpPayrollDetail.tunjangan_makan || 0,
+                    tunjangan_jabatan: selectedEmpPayrollDetail.tunjangan_jabatan || 0,
+                    tunjangan_transport: selectedEmpPayrollDetail.tunjangan_transport || 0,
+                    potongan_kasbon: selectedEmpPayrollDetail.potongan_kasbon || 0,
+                    potongan_bpjs: selectedEmpPayrollDetail.potongan_bpjs || 0,
+                    potongan_lain: selectedEmpPayrollDetail.potongan_lain || 0,
+                    catatan: selectedEmpPayrollDetail.catatan || '',
+                    status: selectedEmpPayrollDetail.status || 'draft'
+                });
+            }
+        } else {
+            lastOpenedIdRef.current = null;
+        }
+    }, [selectedEmpPayrollDetail, selectedMonth]);
+
+    const handleSaveAdjustments = async () => {
+        if (!selectedEmpPayrollDetail) return;
+        setSavingAdjustments(true);
+        const toastId = toast.loading('Menyimpan penyesuaian gaji...');
+        try {
+            const empId = selectedEmpPayrollDetail.employee.id;
+            const docId = `${empId}-${selectedMonth}`;
+            
+            const payload = {
+                user_id: empId,
+                bulan: selectedMonth,
+                tunjangan_makan: Number(adjustmentsForm.tunjangan_makan) || 0,
+                tunjangan_jabatan: Number(adjustmentsForm.tunjangan_jabatan) || 0,
+                tunjangan_transport: Number(adjustmentsForm.tunjangan_transport) || 0,
+                potongan_kasbon: Number(adjustmentsForm.potongan_kasbon) || 0,
+                potongan_bpjs: Number(adjustmentsForm.potongan_bpjs) || 0,
+                potongan_lain: Number(adjustmentsForm.potongan_lain) || 0,
+                catatan: adjustmentsForm.catatan || '',
+                status: adjustmentsForm.status || 'draft',
+                
+                // Frozen calculations snapshots for secure historical slip display
+                daysPresent: selectedEmpPayrollDetail.daysPresent || 0,
+                totalRegularHours: selectedEmpPayrollDetail.totalRegularHours || 0,
+                totalLemburHours: selectedEmpPayrollDetail.totalLemburHours || 0,
+                totalDryerBonus: selectedEmpPayrollDetail.totalDryerBonus || 0,
+                totalRegPay: selectedEmpPayrollDetail.totalRegPay || 0,
+                totalLemburPay: selectedEmpPayrollDetail.totalLemburPay || 0,
+                basePay: selectedEmpPayrollDetail.basePay || 0,
+                
+                // Frozen employee info snapshot
+                employee_nama: selectedEmpPayrollDetail.employee.nama || '',
+                employee_jabatan: selectedEmpPayrollDetail.employee.jabatan || '',
+                employee_divisi: selectedEmpPayrollDetail.employee.divisi || '',
+                employee_gaji_type: selectedEmpPayrollDetail.employee.gaji_type || 'per_jam',
+                employee_gaji_per_jam: selectedEmpPayrollDetail.employee.gaji_per_jam || 14000,
+                employee_gaji_lembur_per_jam: selectedEmpPayrollDetail.employee.gaji_lembur_per_jam || 14000,
+                employee_bonus_dryer_1: !!selectedEmpPayrollDetail.employee.bonus_dryer_1,
+                
+                updated_at: new Date().toISOString()
+            };
+
+            await setDoc(doc(db, 'payrolls', docId), payload, { merge: true });
+            
+            const updatedSalary = (selectedEmpPayrollDetail.basePay + 
+                selectedEmpPayrollDetail.totalRegPay + 
+                selectedEmpPayrollDetail.totalLemburPay + 
+                selectedEmpPayrollDetail.totalDryerBonus +
+                (payload.tunjangan_makan + payload.tunjangan_jabatan + payload.tunjangan_transport) -
+                (payload.potongan_kasbon + payload.potongan_bpjs + payload.potongan_lain));
+
+            setSelectedEmpPayrollDetail((prev: any) => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    ...payload,
+                    totalTunjangan: payload.tunjangan_makan + payload.tunjangan_jabatan + payload.tunjangan_transport,
+                    totalPotongan: payload.potongan_kasbon + payload.potongan_bpjs + payload.potongan_lain,
+                    grandTotalSalary: updatedSalary
+                };
+            });
+
+            toast.success('Penyesuaian Gaji & Status Pembayaran berhasil disimpan!', { id: toastId });
+        } catch (error: any) {
+            console.error('Error saving adjustments:', error);
+            toast.error(error.message || 'Gagal menyimpan penyesuaian gaji', { id: toastId });
+        } finally {
+            setSavingAdjustments(false);
+        }
+    };
 
     const filteredMonthlyRecords = monthlyRecords.filter(r => {
         if (!selectedMonthDivisi) return true;
@@ -754,7 +879,19 @@ export default function AbsensiTab() {
 
             const totalRegPay = totalRegularHours * regRate;
             const totalLemburPay = totalLemburHours * lemburRate;
-            const grandTotalSalary = basePay + totalRegPay + totalLemburPay + totalDryerBonus;
+
+            // Get monthly adjustments
+            const adj = payrollsMap[emp.id] || {};
+            const tunMakan = Number(adj.tunjangan_makan) || 0;
+            const tunJabatan = Number(adj.tunjangan_jabatan) || 0;
+            const tunTransport = Number(adj.tunjangan_transport) || 0;
+            const potKasbon = Number(adj.potongan_kasbon) || 0;
+            const potBpjs = Number(adj.potongan_bpjs) || 0;
+            const potLain = Number(adj.potongan_lain) || 0;
+            const totalTunjangan = tunMakan + tunJabatan + tunTransport;
+            const totalPotongan = potKasbon + potBpjs + potLain;
+
+            const grandTotalSalary = basePay + totalRegPay + totalLemburPay + totalDryerBonus + totalTunjangan - totalPotongan;
 
             return {
                 employee: emp,
@@ -766,6 +903,16 @@ export default function AbsensiTab() {
                 basePay,
                 daysPresent: presentDates.size,
                 grandTotalSalary,
+                tunjangan_makan: tunMakan,
+                tunjangan_jabatan: tunJabatan,
+                tunjangan_transport: tunTransport,
+                totalTunjangan,
+                potongan_kasbon: potKasbon,
+                potongan_bpjs: potBpjs,
+                potongan_lain: potLain,
+                totalPotongan,
+                catatan: adj.catatan || '',
+                status: adj.status || 'draft',
                 salaryBreakdown: salaryBreakdown.sort((a, b) => a.tanggal.localeCompare(b.tanggal))
             };
         });
@@ -1133,6 +1280,7 @@ export default function AbsensiTab() {
                     <div style="text-align: right;">
                         <strong>Sistem Gaji   :</strong> \${emp.gaji_type === 'per_bulan' ? 'Bulanan' : 'Per Jam'}<br>
                         <strong>Hari Hadir    :</strong> \${payroll.daysPresent} Hari<br>
+                        <strong>Status Gaji   :</strong> <span style="font-weight: bold; text-transform: uppercase; color: \${payroll.status === 'paid' ? '#059669' : payroll.status === 'approved' ? '#2563eb' : '#6b7280'}">\${payroll.status || 'draft'}</span><br>
                         <strong>Tanggal Cetak :</strong> \${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}
                     </div>
                 </div>
@@ -1172,6 +1320,48 @@ export default function AbsensiTab() {
                                 <td style="text-align: right;">Rp \${payroll.totalDryerBonus.toLocaleString('id-ID')}</td>
                             </tr>
                         \` : ''}
+                        \${payroll.tunjangan_makan ? \`
+                            <tr>
+                                <td>Tunjangan Makan</td>
+                                <td>Penyesuaian Bulanan</td>
+                                <td style="text-align: right; color: #059669;">+Rp \${payroll.tunjangan_makan.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \` : ''}
+                        \${payroll.tunjangan_jabatan ? \`
+                            <tr>
+                                <td>Tunjangan Jabatan</td>
+                                <td>Penyesuaian Bulanan</td>
+                                <td style="text-align: right; color: #059669;">+Rp \${payroll.tunjangan_jabatan.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \` : ''}
+                        \${payroll.tunjangan_transport ? \`
+                            <tr>
+                                <td>Tunjangan Transport</td>
+                                <td>Penyesuaian Bulanan</td>
+                                <td style="text-align: right; color: #059669;">+Rp \${payroll.tunjangan_transport.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \` : ''}
+                        \${payroll.potongan_kasbon ? \`
+                            <tr>
+                                <td>Potongan Kasbon / Pinjaman</td>
+                                <td>Penyesuaian Bulanan</td>
+                                <td style="text-align: right; color: #dc2626;">-Rp \${payroll.potongan_kasbon.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \` : ''}
+                        \${payroll.potongan_bpjs ? \`
+                            <tr>
+                                <td>Potongan BPJS</td>
+                                <td>Penyesuaian Bulanan</td>
+                                <td style="text-align: right; color: #dc2626;">-Rp \${payroll.potongan_bpjs.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \` : ''}
+                        \${payroll.potongan_lain ? \`
+                            <tr>
+                                <td>Potongan Lain-lain</td>
+                                <td>Penyesuaian Bulanan</td>
+                                <td style="text-align: right; color: #dc2626;">-Rp \${payroll.potongan_lain.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \` : ''}
                     </tbody>
                 </table>
 
@@ -1179,6 +1369,12 @@ export default function AbsensiTab() {
                     <span>TOTAL GAJI DITERIMA (TAKE HOME PAY)</span>
                     <span>Rp \${payroll.grandTotalSalary.toLocaleString('id-ID')}</span>
                 </div>
+
+                \${payroll.catatan ? \`
+                    <div style="font-size: 11px; margin-top: 15px; margin-bottom: 25px; border: 1px dashed #000; padding: 10px; background: #fafafa; border-radius: 4px;">
+                        <strong>Catatan Slip:</strong> \${payroll.catatan}
+                    </div>
+                \` : ''}
 
                 <div class="footer-sig">
                     <div style="text-align: center; width: 200px;">
@@ -2158,7 +2354,22 @@ export default function AbsensiTab() {
                                                         <td className="p-4 text-center font-semibold text-slate-600">{payroll.totalRegularHours.toFixed(1)}</td>
                                                         <td className="p-4 text-center font-semibold text-slate-600">{payroll.totalLemburHours.toFixed(1)}</td>
                                                         <td className="p-4 text-right">
-                                                            <span className="font-black text-slate-900 text-sm">Rp {payroll.grandTotalSalary.toLocaleString('id-ID')}</span>
+                                                            <span className="font-black text-slate-900 text-sm block">Rp {payroll.grandTotalSalary.toLocaleString('id-ID')}</span>
+                                                            <div className="flex flex-col items-end gap-0.5 mt-1">
+                                                                {payroll.status === 'paid' ? (
+                                                                    <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 font-extrabold rounded-full text-[9px] uppercase">Dibayar</span>
+                                                                ) : payroll.status === 'approved' ? (
+                                                                    <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 font-extrabold rounded-full text-[9px] uppercase">Disetujui</span>
+                                                                ) : (
+                                                                    <span className="px-1.5 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 font-extrabold rounded-full text-[9px] uppercase">Draft</span>
+                                                                )}
+                                                                {payroll.totalTunjangan > 0 && (
+                                                                    <span className="text-[9px] font-bold text-emerald-600 block">+Rp {payroll.totalTunjangan.toLocaleString('id-ID')}</span>
+                                                                )}
+                                                                {payroll.totalPotongan > 0 && (
+                                                                    <span className="text-[9px] font-bold text-rose-600 block">-Rp {payroll.totalPotongan.toLocaleString('id-ID')}</span>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                         <td className="p-4 text-center">
                                                             <div className="flex justify-center items-center gap-1.5 flex-wrap">
@@ -2686,6 +2897,137 @@ export default function AbsensiTab() {
                                     {selectedEmpPayrollDetail.employee.bonus_dryer_1 && (
                                         <div>Bonus Dryer 1: <strong className="text-emerald-700">Aktif (Rp 10.000 / kehadiran dryer menyala)</strong></div>
                                     )}
+                                </div>
+                            </div>
+
+                            {/* Monthly Adjustments Input Panel */}
+                            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Form Penyesuaian & Pembayaran Bulan Ini</h4>
+                                    <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 font-bold rounded-md">Khusus {format(new Date(selectedMonth + "-02"), 'MMMM yyyy', { locale: id })}</span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Column 1: Tunjangan (Allowances) */}
+                                    <div className="space-y-3">
+                                        <h5 className="text-[11px] font-black text-emerald-700 uppercase tracking-wider">💰 Tunjangan (Penambah Gaji)</h5>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tunjangan Makan</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
+                                                <input
+                                                    type="number"
+                                                    value={adjustmentsForm.tunjangan_makan}
+                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, tunjangan_makan: Number(e.target.value) || 0 })}
+                                                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tunjangan Jabatan</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
+                                                <input
+                                                    type="number"
+                                                    value={adjustmentsForm.tunjangan_jabatan}
+                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, tunjangan_jabatan: Number(e.target.value) || 0 })}
+                                                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tunjangan Transport</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
+                                                <input
+                                                    type="number"
+                                                    value={adjustmentsForm.tunjangan_transport}
+                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, tunjangan_transport: Number(e.target.value) || 0 })}
+                                                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Column 2: Potongan (Deductions) */}
+                                    <div className="space-y-3">
+                                        <h5 className="text-[11px] font-black text-rose-700 uppercase tracking-wider">🛑 Potongan (Pengurang Gaji)</h5>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kasbon / Pinjaman</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
+                                                <input
+                                                    type="number"
+                                                    value={adjustmentsForm.potongan_kasbon}
+                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, potongan_kasbon: Number(e.target.value) || 0 })}
+                                                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Potongan BPJS</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
+                                                <input
+                                                    type="number"
+                                                    value={adjustmentsForm.potongan_bpjs}
+                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, potongan_bpjs: Number(e.target.value) || 0 })}
+                                                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Potongan Lain-lain</label>
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
+                                                <input
+                                                    type="number"
+                                                    value={adjustmentsForm.potongan_lain}
+                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, potongan_lain: Number(e.target.value) || 0 })}
+                                                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-200">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Catatan Gaji / Slip</label>
+                                        <input
+                                            type="text"
+                                            value={adjustmentsForm.catatan}
+                                            onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, catatan: e.target.value })}
+                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs text-slate-700"
+                                            placeholder="misal: Bonus tambahan kinerja, atau catatan denda terlambat"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Status Pembayaran Gaji</label>
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                value={adjustmentsForm.status}
+                                                onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, status: e.target.value })}
+                                                className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700 bg-white"
+                                            >
+                                                <option value="draft">📁 DRAFT (Belum Dipublikasi)</option>
+                                                <option value="approved">✅ DISETUJUI (Karyawan Bisa Lihat Slip)</option>
+                                                <option value="paid">💵 SUDAH DIBAYAR / LUNAS</option>
+                                            </select>
+                                            <button
+                                                onClick={handleSaveAdjustments}
+                                                disabled={savingAdjustments}
+                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer shadow-sm flex items-center gap-1.5 shrink-0"
+                                            >
+                                                {savingAdjustments ? '...' : 'Simpan'}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
