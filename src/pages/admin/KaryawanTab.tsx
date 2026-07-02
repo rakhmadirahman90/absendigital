@@ -28,6 +28,19 @@ export default function KaryawanTab() {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [isExtracting, setIsExtracting] = useState(false);
 
+    const formatRupiah = (val: string | number) => {
+        if (val === undefined || val === null || val === '') return '';
+        const clean = String(val).replace(/[^0-9]/g, '');
+        if (!clean) return '';
+        return Number(clean).toLocaleString('id-ID');
+    };
+
+    const parseRupiah = (formattedVal: string | number) => {
+        if (typeof formattedVal === 'number') return formattedVal;
+        const clean = String(formattedVal).replace(/[^0-9]/g, '');
+        return clean ? Number(clean) : 0;
+    };
+
     const handleAIPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -258,7 +271,13 @@ export default function KaryawanTab() {
 
             const userId = editingId || `wa-${cleanWaNumber}`;
             
-            const payload = { ...formData, waNumber: cleanWaNumber };
+            const payload = { 
+                ...formData, 
+                waNumber: cleanWaNumber,
+                gaji_per_jam: Number(formData.gaji_per_jam) || 0,
+                gaji_bulanan: Number(formData.gaji_bulanan) || 0,
+                gaji_lembur_per_jam: Number(formData.gaji_lembur_per_jam) || 0
+            };
             if (!editingId && !payload.password) payload.password = '123456'; // Default password
 
             await setDoc(doc(db, 'users', userId), payload, { merge: true });
@@ -442,24 +461,28 @@ export default function KaryawanTab() {
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Tarif Gaji Per Jam (Rupiah)</label>
                                 <input 
-                                    type="number" 
-                                    value={formData.gaji_per_jam || 0} 
-                                    onChange={e => setFormData({...formData, gaji_per_jam: Number(e.target.value)})} 
+                                    type="text" 
+                                    value={formData.gaji_per_jam === '' ? '' : formatRupiah(formData.gaji_per_jam)} 
+                                    onChange={e => {
+                                        const raw = e.target.value;
+                                        setFormData({...formData, gaji_per_jam: raw === '' ? '' : parseRupiah(raw)});
+                                    }} 
                                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm" 
-                                    placeholder="Contoh: 14000"
-                                    min="0"
+                                    placeholder="Contoh: 14.000"
                                 />
                             </div>
                         ) : (
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Gaji Pokok Per Bulan (Rupiah)</label>
                                 <input 
-                                    type="number" 
-                                    value={formData.gaji_bulanan || 0} 
-                                    onChange={e => setFormData({...formData, gaji_bulanan: Number(e.target.value)})} 
+                                    type="text" 
+                                    value={formData.gaji_bulanan === '' ? '' : formatRupiah(formData.gaji_bulanan)} 
+                                    onChange={e => {
+                                        const raw = e.target.value;
+                                        setFormData({...formData, gaji_bulanan: raw === '' ? '' : parseRupiah(raw)});
+                                    }} 
                                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm" 
-                                    placeholder="Contoh: 3000000"
-                                    min="0"
+                                    placeholder="Contoh: 3.000.000"
                                 />
                             </div>
                         )}
@@ -467,12 +490,14 @@ export default function KaryawanTab() {
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Tarif Lembur Per Jam (Rupiah)</label>
                             <input 
-                                type="number" 
-                                value={formData.gaji_lembur_per_jam || 0} 
-                                onChange={e => setFormData({...formData, gaji_lembur_per_jam: Number(e.target.value)})} 
+                                type="text" 
+                                value={formData.gaji_lembur_per_jam === '' ? '' : formatRupiah(formData.gaji_lembur_per_jam)} 
+                                onChange={e => {
+                                    const raw = e.target.value;
+                                    setFormData({...formData, gaji_lembur_per_jam: raw === '' ? '' : parseRupiah(raw)});
+                                }} 
                                 className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm" 
-                                placeholder="Contoh: 14000"
-                                min="0"
+                                placeholder="Contoh: 14.000"
                             />
                         </div>
 

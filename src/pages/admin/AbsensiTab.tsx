@@ -49,6 +49,19 @@ export default function AbsensiTab() {
     const [payrollSearch, setPayrollSearch] = useState('');
     const [selectedEmpPayrollDetail, setSelectedEmpPayrollDetail] = useState<any>(null);
     
+    const formatRupiah = (val: string | number) => {
+        if (val === undefined || val === null || val === '') return '';
+        const clean = String(val).replace(/[^0-9]/g, '');
+        if (!clean) return '';
+        return Number(clean).toLocaleString('id-ID');
+    };
+
+    const parseRupiah = (formattedVal: string | number) => {
+        if (typeof formattedVal === 'number') return formattedVal;
+        const clean = String(formattedVal).replace(/[^0-9]/g, '');
+        return clean ? Number(clean) : 0;
+    };
+
     const [editingRecord, setEditingRecord] = useState<any>(null);
     const [editForm, setEditForm] = useState({ 
         jam_masuk: '', 
@@ -408,12 +421,12 @@ export default function AbsensiTab() {
             const payload = {
                 user_id: empId,
                 bulan: selectedMonth,
-                tunjangan_makan: Number(adjustmentsForm.tunjangan_makan) || 0,
-                tunjangan_jabatan: Number(adjustmentsForm.tunjangan_jabatan) || 0,
-                tunjangan_transport: Number(adjustmentsForm.tunjangan_transport) || 0,
-                potongan_kasbon: Number(adjustmentsForm.potongan_kasbon) || 0,
-                potongan_bpjs: Number(adjustmentsForm.potongan_bpjs) || 0,
-                potongan_lain: Number(adjustmentsForm.potongan_lain) || 0,
+                tunjangan_makan: parseRupiah(adjustmentsForm.tunjangan_makan),
+                tunjangan_jabatan: parseRupiah(adjustmentsForm.tunjangan_jabatan),
+                tunjangan_transport: parseRupiah(adjustmentsForm.tunjangan_transport),
+                potongan_kasbon: parseRupiah(adjustmentsForm.potongan_kasbon),
+                potongan_bpjs: parseRupiah(adjustmentsForm.potongan_bpjs),
+                potongan_lain: parseRupiah(adjustmentsForm.potongan_lain),
                 catatan: adjustmentsForm.catatan || '',
                 status: adjustmentsForm.status || 'draft',
                 
@@ -678,9 +691,9 @@ export default function AbsensiTab() {
         try {
             await setDoc(doc(db, 'users', editingPayrollUser.id), {
                 gaji_type: payrollForm.gaji_type,
-                gaji_per_jam: Number(payrollForm.gaji_per_jam) || 0,
-                gaji_bulanan: Number(payrollForm.gaji_bulanan) || 0,
-                gaji_lembur_per_jam: Number(payrollForm.gaji_lembur_per_jam) || 0,
+                gaji_per_jam: parseRupiah(payrollForm.gaji_per_jam),
+                gaji_bulanan: parseRupiah(payrollForm.gaji_bulanan),
+                gaji_lembur_per_jam: parseRupiah(payrollForm.gaji_lembur_per_jam),
                 bonus_dryer_1: payrollForm.bonus_dryer_1
             }, { merge: true });
             
@@ -2915,9 +2928,12 @@ export default function AbsensiTab() {
                                             <div className="relative">
                                                 <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
                                                 <input
-                                                    type="number"
-                                                    value={adjustmentsForm.tunjangan_makan}
-                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, tunjangan_makan: Number(e.target.value) || 0 })}
+                                                    type="text"
+                                                    value={adjustmentsForm.tunjangan_makan === '' ? '' : formatRupiah(adjustmentsForm.tunjangan_makan)}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        setAdjustmentsForm({ ...adjustmentsForm, tunjangan_makan: raw === '' ? '' : parseRupiah(raw) });
+                                                    }}
                                                     className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
                                                     placeholder="0"
                                                 />
@@ -2928,9 +2944,12 @@ export default function AbsensiTab() {
                                             <div className="relative">
                                                 <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
                                                 <input
-                                                    type="number"
-                                                    value={adjustmentsForm.tunjangan_jabatan}
-                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, tunjangan_jabatan: Number(e.target.value) || 0 })}
+                                                    type="text"
+                                                    value={adjustmentsForm.tunjangan_jabatan === '' ? '' : formatRupiah(adjustmentsForm.tunjangan_jabatan)}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        setAdjustmentsForm({ ...adjustmentsForm, tunjangan_jabatan: raw === '' ? '' : parseRupiah(raw) });
+                                                    }}
                                                     className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
                                                     placeholder="0"
                                                 />
@@ -2941,9 +2960,12 @@ export default function AbsensiTab() {
                                             <div className="relative">
                                                 <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
                                                 <input
-                                                    type="number"
-                                                    value={adjustmentsForm.tunjangan_transport}
-                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, tunjangan_transport: Number(e.target.value) || 0 })}
+                                                    type="text"
+                                                    value={adjustmentsForm.tunjangan_transport === '' ? '' : formatRupiah(adjustmentsForm.tunjangan_transport)}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        setAdjustmentsForm({ ...adjustmentsForm, tunjangan_transport: raw === '' ? '' : parseRupiah(raw) });
+                                                    }}
                                                     className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
                                                     placeholder="0"
                                                 />
@@ -2959,9 +2981,12 @@ export default function AbsensiTab() {
                                             <div className="relative">
                                                 <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
                                                 <input
-                                                    type="number"
-                                                    value={adjustmentsForm.potongan_kasbon}
-                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, potongan_kasbon: Number(e.target.value) || 0 })}
+                                                    type="text"
+                                                    value={adjustmentsForm.potongan_kasbon === '' ? '' : formatRupiah(adjustmentsForm.potongan_kasbon)}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        setAdjustmentsForm({ ...adjustmentsForm, potongan_kasbon: raw === '' ? '' : parseRupiah(raw) });
+                                                    }}
                                                     className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
                                                     placeholder="0"
                                                 />
@@ -2972,9 +2997,12 @@ export default function AbsensiTab() {
                                             <div className="relative">
                                                 <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
                                                 <input
-                                                    type="number"
-                                                    value={adjustmentsForm.potongan_bpjs}
-                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, potongan_bpjs: Number(e.target.value) || 0 })}
+                                                    type="text"
+                                                    value={adjustmentsForm.potongan_bpjs === '' ? '' : formatRupiah(adjustmentsForm.potongan_bpjs)}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        setAdjustmentsForm({ ...adjustmentsForm, potongan_bpjs: raw === '' ? '' : parseRupiah(raw) });
+                                                    }}
                                                     className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
                                                     placeholder="0"
                                                 />
@@ -2985,9 +3013,12 @@ export default function AbsensiTab() {
                                             <div className="relative">
                                                 <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">Rp</span>
                                                 <input
-                                                    type="number"
-                                                    value={adjustmentsForm.potongan_lain}
-                                                    onChange={(e) => setAdjustmentsForm({ ...adjustmentsForm, potongan_lain: Number(e.target.value) || 0 })}
+                                                    type="text"
+                                                    value={adjustmentsForm.potongan_lain === '' ? '' : formatRupiah(adjustmentsForm.potongan_lain)}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        setAdjustmentsForm({ ...adjustmentsForm, potongan_lain: raw === '' ? '' : parseRupiah(raw) });
+                                                    }}
                                                     className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-700"
                                                     placeholder="0"
                                                 />
@@ -3146,22 +3177,28 @@ export default function AbsensiTab() {
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Gaji Bulanan Pokok (Rp)</label>
                                     <input
-                                        type="number"
-                                        value={payrollForm.gaji_bulanan}
-                                        onChange={(e) => setPayrollForm(prev => ({ ...prev, gaji_bulanan: Number(e.target.value) }))}
+                                        type="text"
+                                        value={payrollForm.gaji_bulanan === '' ? '' : formatRupiah(payrollForm.gaji_bulanan)}
+                                        onChange={(e) => {
+                                            const raw = e.target.value;
+                                            setPayrollForm(prev => ({ ...prev, gaji_bulanan: raw === '' ? '' : parseRupiah(raw) }));
+                                        }}
                                         className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
-                                        placeholder="Contoh: 3000000"
+                                        placeholder="Contoh: 3.000.000"
                                     />
                                 </div>
                             ) : (
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Gaji Per Jam (Rp)</label>
                                     <input
-                                        type="number"
-                                        value={payrollForm.gaji_per_jam}
-                                        onChange={(e) => setPayrollForm(prev => ({ ...prev, gaji_per_jam: Number(e.target.value) }))}
+                                        type="text"
+                                        value={payrollForm.gaji_per_jam === '' ? '' : formatRupiah(payrollForm.gaji_per_jam)}
+                                        onChange={(e) => {
+                                            const raw = e.target.value;
+                                            setPayrollForm(prev => ({ ...prev, gaji_per_jam: raw === '' ? '' : parseRupiah(raw) }));
+                                        }}
                                         className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
-                                        placeholder="Contoh: 14000"
+                                        placeholder="Contoh: 14.000"
                                     />
                                 </div>
                             )}
@@ -3169,11 +3206,14 @@ export default function AbsensiTab() {
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Gaji Lembur Per Jam (Rp)</label>
                                 <input
-                                    type="number"
-                                    value={payrollForm.gaji_lembur_per_jam}
-                                    onChange={(e) => setPayrollForm(prev => ({ ...prev, gaji_lembur_per_jam: Number(e.target.value) }))}
+                                    type="text"
+                                    value={payrollForm.gaji_lembur_per_jam === '' ? '' : formatRupiah(payrollForm.gaji_lembur_per_jam)}
+                                    onChange={(e) => {
+                                        const raw = e.target.value;
+                                        setPayrollForm(prev => ({ ...prev, gaji_lembur_per_jam: raw === '' ? '' : parseRupiah(raw) }));
+                                    }}
                                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
-                                    placeholder="Contoh: 14000"
+                                    placeholder="Contoh: 14.000"
                                 />
                             </div>
 
