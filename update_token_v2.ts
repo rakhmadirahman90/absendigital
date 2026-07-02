@@ -13,15 +13,17 @@ async function main() {
   const app = initializeApp(config);
   const db = initializeFirestore(app, {}, config.firestoreDatabaseId);
 
-  const newToken = "CnWD8XqvzqcfQvi8P6bGJfhKJpv9BwX8Lk9t8sWdJU";
+  const newToken = "wavio_a9aef1ead31825220df46c29fecac3738eafda0884c2c950bba2b55a441ce75b";
   console.log(`Updating token to exactly: |${newToken}| (Length: ${newToken.length})`);
 
   try {
     const settingsDocRef = doc(db, 'settings', 'wa_reminder_settings');
     await updateDoc(settingsDocRef, {
-      apiToken: newToken.trim()
+      apiToken: newToken.trim(),
+      apiMode: "wavio",
+      enabled: true
     });
-    console.log("Success: Fonnte API Token updated in Firestore.");
+    console.log("Success: Wavio API Token and Mode updated in Firestore.");
   } catch (err: any) {
     console.error("Error updating token:", err.message || err);
   }

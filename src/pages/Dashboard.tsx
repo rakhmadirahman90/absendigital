@@ -50,6 +50,13 @@ export default function Dashboard() {
   const [weeklyTrends, setWeeklyTrends] = useState<any[]>([]);
   const [geofencingStatus, setGeofencingStatus] = useState<'checking' | 'inside' | 'outside' | 'error'>('checking');
   const [geofencingMessage, setGeofencingMessage] = useState('Mengecek lokasi...');
+  const [mySalaryStats, setMySalaryStats] = useState<any>({
+    totalRegularHours: 0,
+    totalLemburHours: 0,
+    totalDryerBonus: 0,
+    estimatedSalary: 0,
+    daysPresent: 0
+  });
 
   // Profile update states
   const [isEditing, setIsEditing] = useState(false);
@@ -114,6 +121,71 @@ export default function Dashboard() {
         const todayRecord = records.find((r: any) => r.tanggal === todayStr);
         setTodayAttendance(todayRecord || null);
 
+        // Calculate estimated salary for current month
+        const currentMonthStr = new Date().toISOString().substring(0, 7); // "YYYY-MM"
+        const currentMonthRecords = records.filter((r: any) => r.tanggal && r.tanggal.startsWith(currentMonthStr));
+        
+        let regHrs = 0;
+        let lembHrs = 0;
+        let dryerBns = 0;
+        let presentDays = 0;
+
+        currentMonthRecords.forEach((rec: any) => {
+          if (!['Hadir', 'Terlambat'].includes(rec.status)) return;
+          presentDays++;
+          
+          const inVal = rec.jam_masuk || '';
+          const outVal = rec.jam_pulang || '';
+          if (!inVal || !outVal) return;
+
+          let inTime = 0;
+          let outTime = 0;
+          if (inVal.includes(':')) {
+              const [h, m] = inVal.split(':').map(Number);
+              inTime = (h || 0) + (m || 0) / 60;
+          } else {
+              inTime = Number(inVal) || 0;
+          }
+          
+          if (outVal.includes(':')) {
+              const [h, m] = outVal.split(':').map(Number);
+              outTime = (h || 0) + (m || 0) / 60;
+          } else {
+              outTime = Number(outVal) || 0;
+          }
+
+          const breakHours = rec.istirahat !== undefined ? Number(rec.istirahat) : 1;
+          const rawHours = Math.max(0, outTime - inTime);
+          const netHours = Math.max(0, rawHours - breakHours);
+
+          if (rec.is_lembur) {
+              lembHrs += netHours;
+          } else {
+              regHrs += netHours;
+          }
+
+          if (rec.dryer_menyala && dbUser?.bonus_dryer_1) {
+              dryerBns += 10000;
+          }
+        });
+
+        const isMonthly = dbUser?.gaji_type === 'per_bulan';
+        const regRate = isMonthly ? 0 : (dbUser?.gaji_per_jam !== undefined ? Number(dbUser.gaji_per_jam) : 14000);
+        const lemburRate = dbUser?.gaji_lembur_per_jam !== undefined ? Number(dbUser.gaji_lembur_per_jam) : 14000;
+        const basePay = isMonthly ? (Number(dbUser.gaji_bulanan) || 0) : 0;
+
+        const earnedRegPay = regHrs * regRate;
+        const earnedLemburPay = lembHrs * lemburRate;
+        const estimatedSalary = basePay + earnedRegPay + earnedLemburPay + dryerBns;
+
+        setMySalaryStats({
+          totalRegularHours: regHrs,
+          totalLemburHours: lembHrs,
+          totalDryerBonus: dryerBns,
+          estimatedSalary,
+          daysPresent: presentDays
+        });
+
         // Process current week's trends (Monday to Friday)
         const weekDates = getWeekDates().slice(0, 5); // Just Mon-Fri
         const trends = weekDates.map(wd => {
@@ -142,7 +214,7 @@ export default function Dashboard() {
     });
 
     return () => unsub();
-  }, [user]);
+  }, [user, dbUser]);
 
   useEffect(() => {
     const checkLocation = async () => {
@@ -485,6 +557,94 @@ export default function Dashboard() {
                 {weeklyTrends.filter(t => t['Terlambat'] > 0).length} Terlambat
               </span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Salary & Payroll Card */}
+      <div className={`rounded-2xl border p-6 transition-all duration-500 ${themeCardBg}`}>
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center space-x-3">
+            <div className={`p-2 rounded-lg ${isDaytime ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/20'}`}>
+              <span className="text-lg">💰</span>
+            </div>
+            <div>
+              <h3 className={`text-lg font-bold ${themeTextVal}`}>Estimasi Gaji & Upah Kerja</h3>
+              <p className="text-[11px] text-slate-400 font-medium">Bulan Berjalan: {format(new Date(), 'MMMM yyyy', { locale: id })}</p>
+            </div>
+          </div>
+          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full uppercase tracking-wider font-mono">
+            {dbUser.gaji_type === 'per_bulan' ? 'Sistem Bulanan' : 'Sistem Per Jam'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+          {/* Main Earnings */}
+          <div className={`p-4 rounded-xl border col-span-1 md:col-span-2 flex flex-col justify-between ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
+            <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Estimasi Pendapatan Kotor</span>
+            <span className="text-2xl md:text-3xl font-black text-emerald-600 font-mono mt-2 block">
+              Rp {(mySalaryStats.estimatedSalary || 0).toLocaleString('id-ID')}
+            </span>
+            <span className="text-[10px] text-slate-400 block mt-2">
+              *Belum termasuk potongan pinjaman/potongan absensi manual dari admin.
+            </span>
+          </div>
+
+          {/* Breakdown Stats */}
+          <div className={`p-4 rounded-xl border ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
+            <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Jam Kerja Reguler</span>
+            <span className={`text-xl font-bold font-mono mt-2 block ${themeTextVal}`}>
+              {(mySalaryStats.totalRegularHours || 0).toFixed(1)} <span className="text-xs font-sans font-normal text-slate-400">Jam</span>
+            </span>
+            <span className="text-[10px] text-slate-400 block mt-1">
+              {dbUser.gaji_type === 'per_bulan' 
+                ? 'Termasuk gaji pokok bulanan' 
+                : `Tarif: Rp ${(dbUser.gaji_per_jam || 14000).toLocaleString('id-ID')}/jam`}
+            </span>
+          </div>
+
+          <div className={`p-4 rounded-xl border ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
+            <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block">Lembur (Overtime)</span>
+            <span className="text-xl font-bold font-mono text-amber-500 mt-2 block">
+              {(mySalaryStats.totalLemburHours || 0).toFixed(1)} <span className="text-xs font-sans font-normal text-slate-400">Jam</span>
+            </span>
+            <span className="text-[10px] text-slate-400 block mt-1">
+              Tarif: Rp ${(dbUser.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')}/jam
+            </span>
+          </div>
+        </div>
+
+        {/* Detailed Breakdown list */}
+        <div className={`mt-6 p-4 rounded-xl border border-dashed text-xs space-y-2.5 ${isDaytime ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/20 border-slate-800'}`}>
+          <div className="flex justify-between items-center text-[11px] font-bold text-slate-400 uppercase tracking-wider pb-1.5 border-b border-slate-100/50">
+            <span>Komponen Upah</span>
+            <span>Jumlah</span>
+          </div>
+          {dbUser.gaji_type === 'per_bulan' && (
+            <div className="flex justify-between items-center">
+              <span className={themeTextLabel}>Gaji Pokok Bulanan</span>
+              <span className={`font-mono font-bold ${themeTextVal}`}>Rp {(dbUser.gaji_bulanan || 0).toLocaleString('id-ID')}</span>
+            </div>
+          )}
+          {dbUser.gaji_type !== 'per_bulan' && (
+            <div className="flex justify-between items-center">
+              <span className={themeTextLabel}>Gaji Pokok Per Jam ({(mySalaryStats.totalRegularHours || 0).toFixed(1)} jam × Rp {(dbUser.gaji_per_jam || 14000).toLocaleString('id-ID')})</span>
+              <span className={`font-mono font-bold ${themeTextVal}`}>Rp {((mySalaryStats.totalRegularHours || 0) * (dbUser.gaji_per_jam || 14000)).toLocaleString('id-ID')}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-center">
+            <span className={themeTextLabel}>Upah Lembur ({(mySalaryStats.totalLemburHours || 0).toFixed(1)} jam × Rp {(dbUser.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')})</span>
+            <span className={`font-mono font-bold text-amber-500`}>Rp {((mySalaryStats.totalLemburHours || 0) * (dbUser.gaji_lembur_per_jam || 14000)).toLocaleString('id-ID')}</span>
+          </div>
+          {dbUser.bonus_dryer_1 && (
+            <div className="flex justify-between items-center">
+              <span className={themeTextLabel}>Bonus Insentif Dryer 1 Aktif</span>
+              <span className="font-mono font-bold text-emerald-500">+Rp {(mySalaryStats.totalDryerBonus || 0).toLocaleString('id-ID')}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-center pt-2.5 border-t border-slate-100/50">
+            <span className={`font-bold ${themeTextVal}`}>Kehadiran Bulan Ini</span>
+            <span className={`font-mono font-bold ${themeTextVal}`}>{mySalaryStats.daysPresent || 0} Hari Masuk Kerja</span>
           </div>
         </div>
       </div>

@@ -21,7 +21,7 @@ export default function AbsensiTab() {
     const [statusFilter, setStatusFilter] = useState<'all' | 'Hadir' | 'Terlambat' | 'absen'>('all');
     
     // Subtab states for Monthly AI reports
-    const [activeSubTab, setActiveSubTab] = useState<'harian' | 'bulanan'>('harian');
+    const [activeSubTab, setActiveSubTab] = useState<'harian' | 'bulanan' | 'gaji'>('harian');
     const [selectedMonth, setSelectedMonth] = useState(() => {
         const today = new Date();
         return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`; // "YYYY-MM"
@@ -32,8 +32,29 @@ export default function AbsensiTab() {
     const [monthlyReportData, setMonthlyReportData] = useState<any>(null);
     const [isGeneratingMonthly, setIsGeneratingMonthly] = useState(false);
     
+    const [payrollSearch, setPayrollSearch] = useState('');
+    const [selectedEmpPayrollDetail, setSelectedEmpPayrollDetail] = useState<any>(null);
+    
     const [editingRecord, setEditingRecord] = useState<any>(null);
-    const [editForm, setEditForm] = useState({ jam_masuk: '', jam_pulang: '', status: '' });
+    const [editForm, setEditForm] = useState({ 
+        jam_masuk: '', 
+        jam_pulang: '', 
+        status: '', 
+        istirahat: 1, 
+        is_lembur: false, 
+        dryer_menyala: false 
+    });
+    
+    // Payroll editing and deleting states
+    const [editingPayrollUser, setEditingPayrollUser] = useState<any>(null);
+    const [payrollForm, setPayrollForm] = useState({
+        gaji_type: 'per_jam',
+        gaji_per_jam: 14000,
+        gaji_bulanan: 0,
+        gaji_lembur_per_jam: 14000,
+        bonus_dryer_1: false
+    });
+    const [deletingPayrollUser, setDeletingPayrollUser] = useState<any>(null);
     
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [viewPhoto, setViewPhoto] = useState<string | null>(null);
@@ -320,7 +341,7 @@ export default function AbsensiTab() {
     };
 
     useEffect(() => {
-        if (activeSubTab === 'bulanan') {
+        if (activeSubTab === 'bulanan' || activeSubTab === 'gaji') {
             fetchMonthlyRecords();
         }
     }, [selectedMonth, activeSubTab, usersMap]);
@@ -493,7 +514,10 @@ export default function AbsensiTab() {
         setEditForm({
             jam_masuk: item.jam_masuk || '',
             jam_pulang: item.jam_pulang || '',
-            status: item.status || 'Hadir'
+            status: item.status || 'Hadir',
+            istirahat: item.istirahat !== undefined && item.istirahat !== null ? Number(item.istirahat) : 1,
+            is_lembur: !!item.is_lembur,
+            dryer_menyala: !!item.dryer_menyala
         });
     };
 
@@ -503,13 +527,70 @@ export default function AbsensiTab() {
             await updateDoc(doc(db, 'attendance', editingRecord.id), {
                 jam_masuk: editForm.jam_masuk,
                 jam_pulang: editForm.jam_pulang,
-                status: editForm.status
+                status: editForm.status,
+                istirahat: Number(editForm.istirahat) || 0,
+                is_lembur: !!editForm.is_lembur,
+                dryer_menyala: !!editForm.dryer_menyala
             });
             toast.success('Data absensi berhasil diperbarui');
             setEditingRecord(null);
         } catch (error) {
             console.error('Error updating attendance:', error);
             toast.error('Gagal memperbarui data absensi');
+        }
+    };
+
+    const handleEditPayroll = (payroll: any) => {
+        const emp = payroll.employee;
+        setEditingPayrollUser(emp);
+        setPayrollForm({
+            gaji_type: emp.gaji_type || 'per_jam',
+            gaji_per_jam: emp.gaji_per_jam !== undefined ? Number(emp.gaji_per_jam) : 14000,
+            gaji_bulanan: emp.gaji_bulanan !== undefined ? Number(emp.gaji_bulanan) : 0,
+            gaji_lembur_per_jam: emp.gaji_lembur_per_jam !== undefined ? Number(emp.gaji_lembur_per_jam) : 14000,
+            bonus_dryer_1: !!emp.bonus_dryer_1
+        });
+    };
+
+    const handleSavePayrollEdit = async () => {
+        if (!editingPayrollUser) return;
+        try {
+            await setDoc(doc(db, 'users', editingPayrollUser.id), {
+                gaji_type: payrollForm.gaji_type,
+                gaji_per_jam: Number(payrollForm.gaji_per_jam) || 0,
+                gaji_bulanan: Number(payrollForm.gaji_bulanan) || 0,
+                gaji_lembur_per_jam: Number(payrollForm.gaji_lembur_per_jam) || 0,
+                bonus_dryer_1: payrollForm.bonus_dryer_1
+            }, { merge: true });
+            
+            toast.success(`Konfigurasi gaji untuk ${editingPayrollUser.nama} berhasil diperbarui.`);
+            setEditingPayrollUser(null);
+        } catch (error) {
+            console.error('Error updating payroll settings:', error);
+            toast.error('Gagal memperbarui konfigurasi gaji.');
+        }
+    };
+
+    const handleDeletePayroll = (payroll: any) => {
+        setDeletingPayrollUser(payroll.employee);
+    };
+
+    const handleConfirmDeletePayroll = async () => {
+        if (!deletingPayrollUser) return;
+        try {
+            await setDoc(doc(db, 'users', deletingPayrollUser.id), {
+                gaji_type: 'per_jam',
+                gaji_per_jam: 0,
+                gaji_bulanan: 0,
+                gaji_lembur_per_jam: 0,
+                bonus_dryer_1: false
+            }, { merge: true });
+
+            toast.success(`Konfigurasi gaji untuk ${deletingPayrollUser.nama} berhasil direset/dihapus.`);
+            setDeletingPayrollUser(null);
+        } catch (error) {
+            console.error('Error resetting payroll settings:', error);
+            toast.error('Gagal mereset konfigurasi gaji.');
         }
     };
 
@@ -573,6 +654,563 @@ export default function AbsensiTab() {
         return true;
     });
 
+    const getPayrollData = () => {
+        const employees = Object.entries(usersMap)
+            .filter(([id, u]: [string, any]) => u.role !== 'admin')
+            .map(([id, u]: [string, any]) => ({ id, ...(u as any) }));
+
+        const results = employees.map(emp => {
+            const empRecords = monthlyRecords.filter(r => r.user_id === emp.id);
+            let totalRegularHours = 0;
+            let totalLemburHours = 0;
+            let totalDryerBonus = 0;
+            const presentDates = new Set<string>();
+            let salaryBreakdown: any[] = [];
+
+            empRecords.forEach(rec => {
+                if (!['Hadir', 'Terlambat'].includes(rec.status)) {
+                    salaryBreakdown.push({
+                        tanggal: rec.tanggal,
+                        status: rec.status,
+                        jam_masuk: '-',
+                        jam_pulang: '-',
+                        istirahat: 0,
+                        jam_kerja: 0,
+                        lembur: 0,
+                        gaji_hari_ini: 0,
+                        dryer_aktif: false,
+                        dryer_bonus: 0,
+                        keterangan: rec.status
+                    });
+                    return;
+                }
+
+                presentDates.add(rec.tanggal);
+                const inVal = rec.jam_masuk || '';
+                const outVal = rec.jam_pulang || '';
+                
+                let inTime = 0;
+                let outTime = 0;
+                
+                if (inVal.includes(':')) {
+                    const [h, m] = inVal.split(':').map(Number);
+                    inTime = (h || 0) + (m || 0) / 60;
+                } else {
+                    inTime = Number(inVal) || 0;
+                }
+                
+                if (outVal.includes(':')) {
+                    const [h, m] = outVal.split(':').map(Number);
+                    outTime = (h || 0) + (m || 0) / 60;
+                } else {
+                    outTime = Number(outVal) || 0;
+                }
+
+                const breakHours = rec.istirahat !== undefined ? Number(rec.istirahat) : 1;
+                const rawHours = Math.max(0, outTime - inTime);
+                const netHours = Math.max(0, rawHours - breakHours);
+
+                let regularHours = 0;
+                let lemburHours = 0;
+                let isLemburShift = !!rec.is_lembur;
+
+                if (isLemburShift) {
+                    lemburHours = netHours;
+                } else {
+                    regularHours = netHours;
+                }
+
+                totalRegularHours += regularHours;
+                totalLemburHours += lemburHours;
+
+                const regRate = emp.gaji_type === 'per_bulan' ? 0 : (emp.gaji_per_jam !== undefined ? Number(emp.gaji_per_jam) : 14000);
+                const lemburRate = emp.gaji_lembur_per_jam !== undefined ? Number(emp.gaji_lembur_per_jam) : 14000;
+
+                const regPay = regularHours * regRate;
+                const lemburPay = lemburHours * lemburRate;
+
+                let dryerBonus = 0;
+                if (rec.dryer_menyala && emp.bonus_dryer_1) {
+                    dryerBonus = 10000;
+                    totalDryerBonus += dryerBonus;
+                }
+
+                const dayTotal = regPay + lemburPay + dryerBonus;
+
+                salaryBreakdown.push({
+                    tanggal: rec.tanggal,
+                    status: rec.status,
+                    jam_masuk: inVal || '-',
+                    jam_pulang: outVal || '-',
+                    istirahat: breakHours,
+                    jam_kerja: regularHours,
+                    lembur: lemburHours,
+                    gaji_hari_ini: dayTotal,
+                    dryer_aktif: !!rec.dryer_menyala,
+                    dryer_bonus: dryerBonus,
+                    keterangan: isLemburShift ? 'Lembur' : 'Biasa'
+                });
+            });
+
+            const basePay = emp.gaji_type === 'per_bulan' ? (Number(emp.gaji_bulanan) || 0) : 0;
+            const regRate = emp.gaji_type === 'per_bulan' ? 0 : (emp.gaji_per_jam !== undefined ? Number(emp.gaji_per_jam) : 14000);
+            const lemburRate = emp.gaji_lembur_per_jam !== undefined ? Number(emp.gaji_lembur_per_jam) : 14000;
+
+            const totalRegPay = totalRegularHours * regRate;
+            const totalLemburPay = totalLemburHours * lemburRate;
+            const grandTotalSalary = basePay + totalRegPay + totalLemburPay + totalDryerBonus;
+
+            return {
+                employee: emp,
+                totalRegularHours,
+                totalLemburHours,
+                totalDryerBonus,
+                totalRegPay,
+                totalLemburPay,
+                basePay,
+                daysPresent: presentDates.size,
+                grandTotalSalary,
+                salaryBreakdown: salaryBreakdown.sort((a, b) => a.tanggal.localeCompare(b.tanggal))
+            };
+        });
+
+        // Apply division and search query filters
+        return results.filter(item => {
+            const matchesDivisi = !selectedMonthDivisi || item.employee.divisi === selectedMonthDivisi;
+            const matchesSearch = !payrollSearch || 
+                item.employee.nama?.toLowerCase().includes(payrollSearch.toLowerCase()) ||
+                item.employee.jabatan?.toLowerCase().includes(payrollSearch.toLowerCase());
+            return matchesDivisi && matchesSearch;
+        });
+    };
+
+    const handleDownloadAllPayrollCSV = () => {
+        const data = getPayrollData();
+        if (data.length === 0) {
+            toast.error('Tidak ada data payroll untuk diekspor.');
+            return;
+        }
+
+        let csvContent = "ID Karyawan,Nama Karyawan,Jabatan,Divisi,Tipe Gaji,Gaji Pokok/Jam,Gaji Pokok Bulanan,Hari Hadir,Total Jam Kerja,Total Jam Lembur,Total Gaji Pokok,Total Gaji Lembur,Total Bonus Dryer 1,Total Gaji Bersih\n";
+        
+        data.forEach(item => {
+            const emp = item.employee;
+            csvContent += `"${emp.id}","${emp.nama}","${emp.jabatan || '-'}","${emp.divisi || '-'}","${emp.gaji_type === 'per_bulan' ? 'Bulanan' : 'Per Jam'}",${emp.gaji_per_jam || 0},${emp.gaji_bulanan || 0},${item.daysPresent},${item.totalRegularHours.toFixed(1)},${item.totalLemburHours.toFixed(1)},${item.totalRegPay.toFixed(0)},${item.totalLemburPay.toFixed(0)},${item.totalDryerBonus},${item.grandTotalSalary}\n`;
+        });
+
+        const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Master_Payroll_Hadir162_${selectedMonth}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('File CSV master payroll berhasil diunduh.');
+    };
+
+    const handleSeedExcelData = async () => {
+        const toastId = toast.loading('Sedang menginisialisasi data karyawan & log absensi dari Excel...');
+        try {
+            // 1. Seed Users
+            const sampleUsers = [
+                {
+                    id: 'wa-0816200001',
+                    payload: {
+                        waNumber: '0816200001',
+                        nama: 'ASMA',
+                        divisi: '162',
+                        jabatan: 'ADMIN',
+                        role: 'karyawan',
+                        password: '123456',
+                        assignedOfficeId: 'all',
+                        gaji_type: 'per_bulan',
+                        gaji_bulanan: 3000000,
+                        gaji_per_jam: 0,
+                        gaji_lembur_per_jam: 16000,
+                        bonus_dryer_1: false
+                    }
+                },
+                {
+                    id: 'wa-0816200002',
+                    payload: {
+                        waNumber: '0816200002',
+                        nama: 'JUNED',
+                        divisi: '162',
+                        jabatan: 'OPERATOR',
+                        role: 'karyawan',
+                        password: '123456',
+                        assignedOfficeId: 'all',
+                        gaji_type: 'per_bulan',
+                        gaji_bulanan: 2800000,
+                        gaji_per_jam: 0,
+                        gaji_lembur_per_jam: 15000,
+                        bonus_dryer_1: false
+                    }
+                },
+                {
+                    id: 'wa-0816200003',
+                    payload: {
+                        waNumber: '0816200003',
+                        nama: 'ABI',
+                        divisi: '162',
+                        jabatan: 'OPERATOR',
+                        role: 'karyawan',
+                        password: '123456',
+                        assignedOfficeId: 'all',
+                        gaji_type: 'per_jam',
+                        gaji_bulanan: 0,
+                        gaji_per_jam: 13000,
+                        gaji_lembur_per_jam: 14000,
+                        bonus_dryer_1: true
+                    }
+                },
+                {
+                    id: 'wa-0816200004',
+                    payload: {
+                        waNumber: '0816200004',
+                        nama: 'JUMA',
+                        divisi: '162',
+                        jabatan: 'PENGAWAS GUD',
+                        role: 'karyawan',
+                        password: '123456',
+                        assignedOfficeId: 'all',
+                        gaji_type: 'per_jam',
+                        gaji_bulanan: 0,
+                        gaji_per_jam: 14000,
+                        gaji_lembur_per_jam: 14000,
+                        bonus_dryer_1: false
+                    }
+                },
+                {
+                    id: 'wa-0816200005',
+                    payload: {
+                        waNumber: '0816200005',
+                        nama: 'PUNDU',
+                        divisi: '162',
+                        jabatan: 'OPERATOR',
+                        role: 'karyawan',
+                        password: '123456',
+                        assignedOfficeId: 'all',
+                        gaji_type: 'per_jam',
+                        gaji_bulanan: 0,
+                        gaji_per_jam: 10000,
+                        gaji_lembur_per_jam: 14000,
+                        bonus_dryer_1: false
+                    }
+                }
+            ];
+
+            for (const u of sampleUsers) {
+                await setDoc(doc(db, 'users', u.id), u.payload, { merge: true });
+            }
+
+            // 2. Seed Attendance Records
+            const sampleAttendance = [
+                // Juma (2026-06-29) - Regular Shift
+                {
+                    id: 'seed-juma-reg-29',
+                    payload: {
+                        user_id: 'wa-0816200004',
+                        tanggal: '2026-06-29',
+                        jam_masuk: '08:00',
+                        jam_pulang: '18:00',
+                        istirahat: 1,
+                        status: 'Hadir',
+                        is_lembur: false,
+                        dryer_menyala: false,
+                        alamat_masuk: 'US Bilibili 162 Head Office',
+                        latitude_masuk: -6.200000,
+                        longitude_masuk: 106.816666
+                    }
+                },
+                // Juma (2026-06-29) - Lembur Shift
+                {
+                    id: 'seed-juma-lembur-29',
+                    payload: {
+                        user_id: 'wa-0816200004',
+                        tanggal: '2026-06-29',
+                        jam_masuk: '18:00',
+                        jam_pulang: '23:00',
+                        istirahat: 2,
+                        status: 'Hadir',
+                        is_lembur: true,
+                        dryer_menyala: false,
+                        alamat_masuk: 'US Bilibili 162 Head Office',
+                        latitude_masuk: -6.200000,
+                        longitude_masuk: 106.816666
+                    }
+                },
+                // Abi (2026-07-01) - Regular Shift
+                {
+                    id: 'seed-abi-reg-01',
+                    payload: {
+                        user_id: 'wa-0816200003',
+                        tanggal: '2026-07-01',
+                        jam_masuk: '07:00',
+                        jam_pulang: '18:00',
+                        istirahat: 1,
+                        status: 'Hadir',
+                        is_lembur: false,
+                        dryer_menyala: true,
+                        alamat_masuk: 'US Bilibili 162 Head Office',
+                        latitude_masuk: -6.200000,
+                        longitude_masuk: 106.816666
+                    }
+                },
+                // Abi (2026-07-01) - Lembur Shift
+                {
+                    id: 'seed-abi-lembur-01',
+                    payload: {
+                        user_id: 'wa-0816200003',
+                        tanggal: '2026-07-01',
+                        jam_masuk: '18:00',
+                        jam_pulang: '23:00',
+                        istirahat: 2,
+                        status: 'Hadir',
+                        is_lembur: true,
+                        dryer_menyala: false,
+                        alamat_masuk: 'US Bilibili 162 Head Office',
+                        latitude_masuk: -6.200000,
+                        longitude_masuk: 106.816666
+                    }
+                },
+                // Pundu (2026-07-01) - Regular Shift
+                {
+                    id: 'seed-pundu-reg-01',
+                    payload: {
+                        user_id: 'wa-0816200005',
+                        tanggal: '2026-07-01',
+                        jam_masuk: '08:00',
+                        jam_pulang: '17:00',
+                        istirahat: 1,
+                        status: 'Hadir',
+                        is_lembur: false,
+                        dryer_menyala: false,
+                        alamat_masuk: 'US Bilibili 162 Head Office',
+                        latitude_masuk: -6.200000,
+                        longitude_masuk: 106.816666
+                    }
+                },
+                // Asma (2026-07-01) - Lembur Shift
+                {
+                    id: 'seed-asma-lembur-01',
+                    payload: {
+                        user_id: 'wa-0816200001',
+                        tanggal: '2026-07-01',
+                        jam_masuk: '18:00',
+                        jam_pulang: '22:00',
+                        istirahat: 0,
+                        status: 'Hadir',
+                        is_lembur: true,
+                        dryer_menyala: false,
+                        alamat_masuk: 'US Bilibili 162 Head Office',
+                        latitude_masuk: -6.200000,
+                        longitude_masuk: 106.816666
+                    }
+                },
+                // Juned (2026-07-01) - Lembur Shift
+                {
+                    id: 'seed-juned-lembur-01',
+                    payload: {
+                        user_id: 'wa-0816200002',
+                        tanggal: '2026-07-01',
+                        jam_masuk: '17:00',
+                        jam_pulang: '24:00',
+                        istirahat: 0,
+                        status: 'Hadir',
+                        is_lembur: true,
+                        dryer_menyala: false,
+                        alamat_masuk: 'US Bilibili 162 Head Office',
+                        latitude_masuk: -6.200000,
+                        longitude_masuk: 106.816666
+                    }
+                }
+            ];
+
+            for (const att of sampleAttendance) {
+                await setDoc(doc(db, 'attendance', att.id), att.payload, { merge: true });
+            }
+
+            toast.success('Inisialisasi Data Excel Berhasil! 5 Karyawan dan 7 Log Absensi berhasil ditambahkan.', { id: toastId });
+        } catch (error: any) {
+            console.error('Error seeding data:', error);
+            toast.error(error.message || 'Gagal menginisialisasi data Excel', { id: toastId });
+        }
+    };
+
+    const handlePrintSingleSlip = (payroll: any) => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            toast.error('Gagal membuka jendela cetak. Pastikan pop-up diperbolehkan.');
+            return;
+        }
+
+        const emp = payroll.employee;
+        const currentMonthName = format(new Date(selectedMonth + "-02"), 'MMMM yyyy', { locale: id });
+
+        printWindow.document.write(`
+            <html>
+            <head>
+                <title>Slip Gaji - ${emp.nama}</title>
+                <style>
+                    body {
+                        font-family: 'Courier New', Courier, monospace;
+                        padding: 40px;
+                        color: #000;
+                        background: #fff;
+                        max-width: 800px;
+                        margin: auto;
+                    }
+                    .header {
+                        text-align: center;
+                        border-bottom: 2px dashed #000;
+                        padding-bottom: 20px;
+                        margin-bottom: 25px;
+                    }
+                    .company-name {
+                        font-size: 20px;
+                        font-weight: bold;
+                    }
+                    .title {
+                        font-size: 16px;
+                        margin-top: 5px;
+                    }
+                    .meta-grid {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        margin-bottom: 20px;
+                        font-size: 13px;
+                    }
+                    .table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-top: 15px;
+                        margin-bottom: 25px;
+                    }
+                    .table th, .table td {
+                        padding: 8px;
+                        text-align: left;
+                        border-bottom: 1px dashed #000;
+                        font-size: 13px;
+                    }
+                    .table th {
+                        font-weight: bold;
+                    }
+                    .total-box {
+                        border-top: 2px dashed #000;
+                        border-bottom: 2px dashed #000;
+                        padding: 15px 10px;
+                        font-size: 15px;
+                        font-weight: bold;
+                        display: flex;
+                        justify-content: space-between;
+                        margin-bottom: 30px;
+                    }
+                    .footer-sig {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-top: 50px;
+                        font-size: 13px;
+                    }
+                    .sig-space {
+                        height: 70px;
+                    }
+                    @media print {
+                        body { padding: 10px; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div class="company-name">HADIR 162 - LAUNDRY & DRYING SERVICES</div>
+                    <div class="title">SLIP GAJI RESMI KARYAWAN</div>
+                    <div style="font-size: 12px; margin-top: 4px;">Periode Pembayaran: \${currentMonthName}</div>
+                </div>
+
+                <div class="meta-grid">
+                    <div>
+                        <strong>Nama Karyawan :</strong> \${emp.nama}<br>
+                        <strong>Jabatan       :</strong> \${emp.jabatan || '-'}<br>
+                        <strong>Divisi        :</strong> \${emp.divisi || '-'}
+                    </div>
+                    <div style="text-align: right;">
+                        <strong>Sistem Gaji   :</strong> \${emp.gaji_type === 'per_bulan' ? 'Bulanan' : 'Per Jam'}<br>
+                        <strong>Hari Hadir    :</strong> \${payroll.daysPresent} Hari<br>
+                        <strong>Tanggal Cetak :</strong> \${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}
+                    </div>
+                </div>
+
+                <h3>Rincian Perhitungan Upah</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Komponen Gaji</th>
+                            <th>Kuantitas / Tarif</th>
+                            <th style="text-align: right;">Jumlah</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        \${emp.gaji_type === 'per_bulan' ? \`
+                            <tr>
+                                <td>Gaji Pokok Bulanan</td>
+                                <td>Fixed (1 Bulan)</td>
+                                <td style="text-align: right;">Rp \${emp.gaji_bulanan.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \` : \`
+                            <tr>
+                                <td>Gaji Kerja Reguler</td>
+                                <td>\${payroll.totalRegularHours.toFixed(1)} Jam × Rp \${(emp.gaji_per_jam || 14000).toLocaleString('id-ID')}/jam</td>
+                                <td style="text-align: right;">Rp \${payroll.totalRegPay.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \`}
+                        <tr>
+                            <td>Uang Lembur (Overtime)</td>
+                            <td>\${payroll.totalLemburHours.toFixed(1)} Jam × Rp \${(emp.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')}/jam</td>
+                            <td style="text-align: right;">Rp \${payroll.totalLemburPay.toLocaleString('id-ID')}</td>
+                        </tr>
+                        \${emp.bonus_dryer_1 ? \`
+                            <tr>
+                                <td>Insentif Bonus Dryer 1 Aktif</td>
+                                <td>Hadir Dryer 1 Menyala</td>
+                                <td style="text-align: right;">Rp \${payroll.totalDryerBonus.toLocaleString('id-ID')}</td>
+                            </tr>
+                        \` : ''}
+                    </tbody>
+                </table>
+
+                <div class="total-box">
+                    <span>TOTAL GAJI DITERIMA (TAKE HOME PAY)</span>
+                    <span>Rp \${payroll.grandTotalSalary.toLocaleString('id-ID')}</span>
+                </div>
+
+                <div class="footer-sig">
+                    <div style="text-align: center; width: 200px;">
+                        Penerima,<br><br>
+                        <div class="sig-space"></div>
+                        ( ____________________ )<br>
+                        \${emp.nama}
+                    </div>
+                    <div style="text-align: center; width: 200px;">
+                        Mengetahui,<br>
+                        Manajer Keuangan / Admin<br>
+                        <div class="sig-space"></div>
+                        ( ____________________ )<br>
+                        Hadir 162 Admin
+                    </div>
+                </div>
+
+                <script>
+                    window.onload = function() {
+                        window.print();
+                    }
+                </script>
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
+    };
+
     return (
         <div className="space-y-6">
             <style>{`
@@ -620,6 +1258,17 @@ export default function AbsensiTab() {
                 >
                     <Sparkles size={15} />
                     <span>Laporan & Ringkasan AI Bulanan</span>
+                </button>
+                <button
+                    onClick={() => setActiveSubTab('gaji')}
+                    className={`px-5 py-3 border-b-2 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+                        activeSubTab === 'gaji'
+                            ? 'border-blue-600 text-blue-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    <span className="text-xs">💰</span>
+                    <span>Payroll & Gaji</span>
                 </button>
             </div>
 
@@ -1141,7 +1790,7 @@ export default function AbsensiTab() {
                 </div>
             </div>
             </>
-            ) : (
+            ) : activeSubTab === 'bulanan' ? (
                 <div className="space-y-6 no-print">
                     <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
                         <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
@@ -1354,6 +2003,207 @@ export default function AbsensiTab() {
                         </div>
                     )}
                 </div>
+            ) : (
+                /* activeSubTab === 'gaji' */
+                <div className="space-y-6 no-print">
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+                        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+                            <div className="space-y-3">
+                                <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Hadir 162 • Sistem Payroll & Penggajian</span>
+                                <h3 className="text-2xl font-black text-slate-800 mt-1 font-sans">Kalkulator & Payroll Gaji Karyawan</h3>
+                                <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                                    Hitung upah kerja reguler, uang lembur, dan insentif bonus dryer secara otomatis berdasarkan log kehadiran, lama istirahat, dan pengaturan gaji karyawan.
+                                </p>
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2 text-xs text-amber-800 max-w-2xl">
+                                    <span className="font-extrabold shrink-0 bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider">Note</span>
+                                    <p className="font-semibold leading-relaxed">
+                                        JAM MASUK OPERATOR TIDAK MENENTU TERGANTUNG MESIN YANG HARUS DIOPERASIKAN
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2 self-stretch md:self-auto flex-wrap">
+                                <button
+                                    onClick={handleSeedExcelData}
+                                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer"
+                                >
+                                    <Sparkles size={14} />
+                                    <span>Inisialisasi Data Excel</span>
+                                </button>
+                                <button
+                                    onClick={handleDownloadAllPayrollCSV}
+                                    className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer"
+                                >
+                                    <span>Ekspor Semua Gaji (CSV)</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Filters and Search */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-100">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pilih Bulan & Tahun</label>
+                                <input
+                                    type="month"
+                                    value={selectedMonth}
+                                    onChange={(e) => setSelectedMonth(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Saring Divisi</label>
+                                <select
+                                    value={selectedMonthDivisi}
+                                    onChange={(e) => setSelectedMonthDivisi(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700 bg-white"
+                                >
+                                    <option value="">Semua Divisi</option>
+                                    {divisiList.map(div => <option key={div} value={div}>{div}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Cari Nama / Jabatan</label>
+                                <input
+                                    type="text"
+                                    placeholder="Cari karyawan..."
+                                    value={payrollSearch}
+                                    onChange={(e) => setPayrollSearch(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Payroll Overview Metric Cards */}
+                    {monthlyLoading ? (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
+                            <div className="flex flex-col items-center justify-center space-y-3">
+                                <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                <p className="text-sm font-semibold text-slate-500">Memuat data payroll...</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Pengeluaran Gaji</span>
+                                    <span className="text-xl font-black text-slate-800">
+                                        Rp {getPayrollData().reduce((acc, curr) => acc + curr.grandTotalSalary, 0).toLocaleString('id-ID')}
+                                    </span>
+                                </div>
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Jam Kerja Biasa</span>
+                                    <span className="text-xl font-black text-slate-800">
+                                        {getPayrollData().reduce((acc, curr) => acc + curr.totalRegularHours, 0).toFixed(1)} Jam
+                                    </span>
+                                </div>
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Jam Lembur</span>
+                                    <span className="text-xl font-black text-slate-800">
+                                        {getPayrollData().reduce((acc, curr) => acc + curr.totalLemburHours, 0).toFixed(1)} Jam
+                                    </span>
+                                </div>
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Bonus Dryer 1</span>
+                                    <span className="text-xl font-black text-slate-800">
+                                        Rp {getPayrollData().reduce((acc, curr) => acc + curr.totalDryerBonus, 0).toLocaleString('id-ID')}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Main Payroll Table Card */}
+                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                                <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                                    <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Daftar Gaji Karyawan ({getPayrollData().length})</span>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                                                <th className="p-4">Karyawan</th>
+                                                <th className="p-4">Sistem Kerja</th>
+                                                <th className="p-4 text-center">Kehadiran</th>
+                                                <th className="p-4 text-center">Regular (Jam)</th>
+                                                <th className="p-4 text-center">Lembur (Jam)</th>
+                                                <th className="p-4 text-right">Estimasi Gaji Bersih</th>
+                                                <th className="p-4 text-center">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                                            {getPayrollData().length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={7} className="p-12 text-center text-slate-400 font-medium">Tidak ada karyawan yang sesuai dengan saringan.</td>
+                                                </tr>
+                                            ) : (
+                                                getPayrollData().map((payroll, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="p-4">
+                                                            <div>
+                                                                <span className="font-bold text-slate-800 block">{payroll.employee.nama}</span>
+                                                                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block mt-0.5">
+                                                                    {payroll.employee.jabatan || 'Karyawan'} • {payroll.employee.divisi || '-'}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            {payroll.employee.gaji_type === 'per_bulan' ? (
+                                                                <div>
+                                                                    <span className="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-100 font-bold rounded-full text-[10px] uppercase">Bulanan</span>
+                                                                    <span className="text-[10px] text-slate-400 block mt-1">Rp {(payroll.employee.gaji_bulanan || 0).toLocaleString('id-ID')}/bln</span>
+                                                                </div>
+                                                            ) : (
+                                                                <div>
+                                                                    <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-100 font-bold rounded-full text-[10px] uppercase">Per Jam</span>
+                                                                    <span className="text-[10px] text-slate-400 block mt-1">Rp {(payroll.employee.gaji_per_jam || 14000).toLocaleString('id-ID')}/jam</span>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4 text-center font-bold text-slate-700">{payroll.daysPresent} Hari</td>
+                                                        <td className="p-4 text-center font-semibold text-slate-600">{payroll.totalRegularHours.toFixed(1)}</td>
+                                                        <td className="p-4 text-center font-semibold text-slate-600">{payroll.totalLemburHours.toFixed(1)}</td>
+                                                        <td className="p-4 text-right">
+                                                            <span className="font-black text-slate-900 text-sm">Rp {payroll.grandTotalSalary.toLocaleString('id-ID')}</span>
+                                                        </td>
+                                                        <td className="p-4 text-center">
+                                                            <div className="flex justify-center items-center gap-1.5 flex-wrap">
+                                                                <button
+                                                                    onClick={() => setSelectedEmpPayrollDetail(payroll)}
+                                                                    className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                                                >
+                                                                    Rincian
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handlePrintSingleSlip(payroll)}
+                                                                    className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                                                >
+                                                                    Cetak Slip
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleEditPayroll(payroll)}
+                                                                    className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-lg transition-colors cursor-pointer"
+                                                                    title="Edit Gaji Karyawan"
+                                                                >
+                                                                    <Edit2 size={13} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeletePayroll(payroll)}
+                                                                    className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg transition-colors cursor-pointer"
+                                                                    title="Hapus / Reset Gaji"
+                                                                >
+                                                                    <Trash2 size={13} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
             )}
 
             {/* Edit Dialog Modal */}
@@ -1406,6 +2256,43 @@ export default function AbsensiTab() {
                                     <option value="Sakit">Sakit</option>
                                     <option value="Alpa">Alpa</option>
                                 </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Lama Istirahat (Jam)</label>
+                                <input 
+                                    type="number" 
+                                    value={editForm.istirahat}
+                                    onChange={(e) => setEditForm({...editForm, istirahat: Number(e.target.value)})}
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700 font-mono"
+                                    min="0"
+                                    max="24"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 pt-1">
+                                <label className="flex items-center space-x-2.5 cursor-pointer select-none">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={!!editForm.is_lembur} 
+                                        onChange={e => setEditForm({...editForm, is_lembur: e.target.checked})} 
+                                        className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20"
+                                    />
+                                    <div className="text-xs">
+                                        <span className="font-bold text-slate-700 block">Lembur</span>
+                                        <span className="text-[10px] text-slate-400 block mt-0.5">Tarif lembur berlaku</span>
+                                    </div>
+                                </label>
+                                <label className="flex items-center space-x-2.5 cursor-pointer select-none">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={!!editForm.dryer_menyala} 
+                                        onChange={e => setEditForm({...editForm, dryer_menyala: e.target.checked})} 
+                                        className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20"
+                                    />
+                                    <div className="text-xs">
+                                        <span className="font-bold text-slate-700 block">Dryer 1 Menyala</span>
+                                        <span className="text-[10px] text-slate-400 block mt-0.5">Klaim bonus Dryer 1</span>
+                                    </div>
+                                </label>
                             </div>
                         </div>
                         <div className="p-4 border-t border-slate-100 flex justify-end gap-2.5 bg-slate-50">
@@ -1736,6 +2623,266 @@ export default function AbsensiTab() {
                     </div>
                 </div>
             </div>
+
+            {/* selectedEmpPayrollDetail modal breakdown */}
+            {selectedEmpPayrollDetail && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+                    <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-8 animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] uppercase tracking-widest font-extrabold px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full">Detail Payroll</span>
+                                    <span className="text-xs text-slate-400">Periode: {format(new Date(selectedMonth + "-02"), 'MMMM yyyy', { locale: id })}</span>
+                                </div>
+                                <h3 className="text-xl font-black text-slate-800 mt-2">{selectedEmpPayrollDetail.employee.nama}</h3>
+                                <p className="text-xs text-slate-500">{selectedEmpPayrollDetail.employee.jabatan || 'Karyawan'} • Divisi: {selectedEmpPayrollDetail.employee.divisi || '-'}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => handlePrintSingleSlip(selectedEmpPayrollDetail)}
+                                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer"
+                                >
+                                    <span>Cetak Slip Gaji (PDF)</span>
+                                </button>
+                                <button
+                                    onClick={() => setSelectedEmpPayrollDetail(null)}
+                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                                >
+                                    Tutup
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Modal Content */}
+                        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                            {/* Stats Summary Cards */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Hari Hadir</span>
+                                    <span className="text-xl font-black text-slate-800">{selectedEmpPayrollDetail.daysPresent} Hari</span>
+                                </div>
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Jam Kerja Biasa</span>
+                                    <span className="text-xl font-black text-slate-800">{selectedEmpPayrollDetail.totalRegularHours.toFixed(1)} Jam</span>
+                                </div>
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Jam Kerja Lembur</span>
+                                    <span className="text-xl font-black text-slate-800">{selectedEmpPayrollDetail.totalLemburHours.toFixed(1)} Jam</span>
+                                </div>
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Upah Gaji</span>
+                                    <span className="text-xl font-black text-blue-600">Rp {selectedEmpPayrollDetail.grandTotalSalary.toLocaleString('id-ID')}</span>
+                                </div>
+                            </div>
+
+                            {/* Salary Config Summary */}
+                            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100/50">
+                                <h4 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">Konfigurasi Pengupahan Karyawan</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-600">
+                                    <div>Tipe Gaji: <strong className="text-slate-800">{selectedEmpPayrollDetail.employee.gaji_type === 'per_bulan' ? 'Bulanan' : 'Per Jam'}</strong></div>
+                                    {selectedEmpPayrollDetail.employee.gaji_type === 'per_bulan' ? (
+                                        <div>Gaji Pokok: <strong className="text-slate-800">Rp {(selectedEmpPayrollDetail.employee.gaji_bulanan || 0).toLocaleString('id-ID')} / bulan</strong></div>
+                                    ) : (
+                                        <div>Tarif Biasa: <strong className="text-slate-800">Rp {(selectedEmpPayrollDetail.employee.gaji_per_jam || 14000).toLocaleString('id-ID')} / jam</strong></div>
+                                    )}
+                                    <div>Tarif Lembur: <strong className="text-slate-800">Rp {(selectedEmpPayrollDetail.employee.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')} / jam</strong></div>
+                                    {selectedEmpPayrollDetail.employee.bonus_dryer_1 && (
+                                        <div>Bonus Dryer 1: <strong className="text-emerald-700">Aktif (Rp 10.000 / kehadiran dryer menyala)</strong></div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Daily Breakdown Table */}
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Rincian Harian Aktivitas & Upah</h4>
+                                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                                                    <th className="p-3">Tanggal</th>
+                                                    <th className="p-3">Status</th>
+                                                    <th className="p-3">Masuk - Pulang</th>
+                                                    <th className="p-3 text-center">Istirahat</th>
+                                                    <th className="p-3 text-center">Jam Kerja</th>
+                                                    <th className="p-3 text-center">Lembur</th>
+                                                    <th className="p-3 text-center">Dryer 1</th>
+                                                    <th className="p-3 text-right">Upah Harian</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                {selectedEmpPayrollDetail.salaryBreakdown.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={8} className="p-8 text-center text-slate-400">Tidak ada log kehadiran terekam.</td>
+                                                    </tr>
+                                                ) : (
+                                                    selectedEmpPayrollDetail.salaryBreakdown.map((breakdown: any, idx: number) => (
+                                                        <tr key={idx} className="hover:bg-slate-50">
+                                                            <td className="p-3 font-semibold">{format(new Date(breakdown.tanggal), 'dd MMMM yyyy', { locale: id })}</td>
+                                                            <td className="p-3">
+                                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                                    breakdown.status === 'Hadir' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                                                    breakdown.status === 'Terlambat' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                                                                    'bg-slate-100 text-slate-600 border border-slate-200'
+                                                                }`}>
+                                                                    {breakdown.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="p-3 font-mono">{breakdown.jam_masuk} - {breakdown.jam_pulang}</td>
+                                                            <td className="p-3 text-center">{breakdown.istirahat} Jam</td>
+                                                            <td className="p-3 text-center">{breakdown.jam_kerja.toFixed(1)} Jam</td>
+                                                            <td className="p-3 text-center">{breakdown.lembur.toFixed(1)} Jam</td>
+                                                            <td className="p-3 text-center">
+                                                                {breakdown.dryer_aktif ? (
+                                                                    <span className="text-xs text-emerald-600 font-bold">● Aktif</span>
+                                                                ) : (
+                                                                    <span className="text-xs text-slate-400">-</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="p-3 text-right font-bold text-slate-900">
+                                                                {breakdown.gaji_hari_ini > 0 ? `Rp ${breakdown.gaji_hari_ini.toLocaleString('id-ID')}` : '-'}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Payroll Modal */}
+            {editingPayrollUser && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                            <div>
+                                <h3 className="font-bold text-slate-800 text-base">Edit Konfigurasi Gaji</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">{editingPayrollUser.nama} • {editingPayrollUser.jabatan || 'Karyawan'}</p>
+                            </div>
+                            <button 
+                                onClick={() => setEditingPayrollUser(null)} 
+                                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-200/50 rounded-xl transition-all cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Form Body */}
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Tipe Gaji</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPayrollForm(prev => ({ ...prev, gaji_type: 'per_jam' }))}
+                                        className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                            payrollForm.gaji_type === 'per_jam'
+                                                ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-sm'
+                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        Per Jam
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPayrollForm(prev => ({ ...prev, gaji_type: 'per_bulan' }))}
+                                        className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                            payrollForm.gaji_type === 'per_bulan'
+                                                ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-sm'
+                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        Bulanan
+                                    </button>
+                                </div>
+                            </div>
+
+                            {payrollForm.gaji_type === 'per_bulan' ? (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Gaji Bulanan Pokok (Rp)</label>
+                                    <input
+                                        type="number"
+                                        value={payrollForm.gaji_bulanan}
+                                        onChange={(e) => setPayrollForm(prev => ({ ...prev, gaji_bulanan: Number(e.target.value) }))}
+                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
+                                        placeholder="Contoh: 3000000"
+                                    />
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Gaji Per Jam (Rp)</label>
+                                    <input
+                                        type="number"
+                                        value={payrollForm.gaji_per_jam}
+                                        onChange={(e) => setPayrollForm(prev => ({ ...prev, gaji_per_jam: Number(e.target.value) }))}
+                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
+                                        placeholder="Contoh: 14000"
+                                    />
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Gaji Lembur Per Jam (Rp)</label>
+                                <input
+                                    type="number"
+                                    value={payrollForm.gaji_lembur_per_jam}
+                                    onChange={(e) => setPayrollForm(prev => ({ ...prev, gaji_lembur_per_jam: Number(e.target.value) }))}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700"
+                                    placeholder="Contoh: 14000"
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2.5 bg-slate-50 p-4 rounded-xl border border-slate-200/50 mt-2">
+                                <input
+                                    type="checkbox"
+                                    id="bonus_dryer_1_edit"
+                                    checked={payrollForm.bonus_dryer_1}
+                                    onChange={(e) => setPayrollForm(prev => ({ ...prev, bonus_dryer_1: e.target.checked }))}
+                                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <label htmlFor="bonus_dryer_1_edit" className="text-xs text-slate-600 font-semibold cursor-pointer select-none">
+                                    Bonus Dryer 1 (Tambahan Rp 10.000 / kehadiran saat dryer menyala)
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-slate-100 flex justify-end gap-2.5 bg-slate-50">
+                            <button 
+                                onClick={() => setEditingPayrollUser(null)} 
+                                className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 transition-all cursor-pointer"
+                            >
+                                Batal
+                            </button>
+                            <button 
+                                onClick={handleSavePayrollEdit} 
+                                className="px-4 py-2 bg-blue-600 text-white font-bold hover:bg-blue-700 rounded-xl transition-all text-xs shadow-md cursor-pointer"
+                            >
+                                Simpan Perubahan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Confirm Reset/Delete Payroll */}
+            <ConfirmDialog
+                isOpen={!!deletingPayrollUser}
+                title="Hapus / Reset Konfigurasi Gaji"
+                message={`Apakah Anda yakin ingin menghapus/mereset seluruh konfigurasi gaji untuk ${deletingPayrollUser?.nama}? Tindakan ini akan mengosongkan tarif gaji pokok dan lembur mereka kembali ke 0.`}
+                onConfirm={handleConfirmDeletePayroll}
+                onCancel={() => setDeletingPayrollUser(null)}
+                isDestructive={true}
+                confirmText="Ya, Hapus/Reset"
+                cancelText="Batal"
+            />
         </div>
     );
 }

@@ -12,6 +12,7 @@ import { initializeFirestore, collection, getDocs, query, where, addDoc, getDoc,
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); // Increase limit for base64 images
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const PORT = 3000;
 
@@ -808,6 +809,57 @@ app.post("/api/send-wa", async (req, res) => {
     }
   }
 
+  if (apiMode === 'wavio' && apiToken) {
+    try {
+      console.log(`[WA Proxy] Sending to Wavio. Token length: ${apiToken.length}`);
+      const trimmedToken = apiToken.trim();
+
+      // Form payload with multiple standard naming options to ensure maximum reliability and compatibility
+      const payload = {
+        apikey: trimmedToken,
+        api_key: trimmedToken,
+        key: trimmedToken,
+        token: trimmedToken,
+        number: cleanNumber,
+        target: cleanNumber,
+        to: cleanNumber,
+        message: message,
+        text: message
+      };
+
+      const response = await fetch('https://api.wavio.web.id/api/v1/public', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${trimmedToken}`,
+          'X-API-KEY': trimmedToken,
+          'X-API-Key': trimmedToken,
+          'x-api-key': trimmedToken,
+          'api-key': trimmedToken,
+          'key': trimmedToken
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      const data: any = await response.json();
+      console.log(`[WA Proxy] Wavio response:`, JSON.stringify(data));
+      
+      const isSuccess = data.status === 'success' || data.status === true || data.success === true || data.code === 200 || data.message === 'sent' || !!data.status;
+      
+      return res.json({
+        success: isSuccess,
+        status: isSuccess ? 'Sukses' : `Gagal (Wavio: ${data.message || data.reason || JSON.stringify(data)})`,
+        data: data
+      });
+    } catch (e: any) {
+      console.error('Wavio send error on server proxy:', e.message || e);
+      return res.json({
+        success: false,
+        status: `Gagal (Koneksi: ${e.message || 'Error'})`
+      });
+    }
+  }
+
   return res.json({
     success: true,
     status: 'Sukses (Simulasi)'
@@ -896,8 +948,264 @@ const sendWhatsAppMessageServer = async (waNumber: string, message: string, sett
       return `Gagal (Koneksi: ${e.message || 'Error'})`;
     }
   }
+
+  if (settings.apiMode === 'wavio' && settings.apiToken) {
+    try {
+      const apiToken = settings.apiToken.trim();
+      const payload = {
+        apikey: apiToken,
+        api_key: apiToken,
+        key: apiToken,
+        token: apiToken,
+        number: cleanNumber,
+        target: cleanNumber,
+        to: cleanNumber,
+        message: message,
+        text: message
+      };
+
+      const response = await fetch('https://api.wavio.web.id/api/v1/public', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiToken}`,
+          'X-API-KEY': apiToken,
+          'X-API-Key': apiToken,
+          'x-api-key': apiToken,
+          'api-key': apiToken,
+          'key': apiToken
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      const data: any = await response.json();
+      const isSuccess = data.status === 'success' || data.status === true || data.success === true || data.code === 200 || data.message === 'sent' || !!data.status;
+      return isSuccess ? 'Sukses' : `Gagal (Wavio: ${data.message || data.reason || JSON.stringify(data)})`;
+    } catch (e: any) {
+      console.error('Wavio send error on server:', e.message || e);
+      return `Gagal (Koneksi: ${e.message || 'Error'})`;
+    }
+  }
   return 'Sukses (Simulasi)';
 };
+
+// Handle Incoming WhatsApp webhook from Wavio / Fonnte
+const handleIncomingWebhook = async (req: express.Request, res: express.Response) => {
+  writeLog(`[Webhook] Incoming POST request. Body: ${JSON.stringify(req.body)}`);
+  
+  try {
+    if (!db) {
+      writeLog("[Webhook] Error: Database is not initialized server-side");
+      return res.status(500).json({ success: false, error: "Database not ready" });
+    }
+
+    // Extract sender, message, and name using multi-layered fallback parameters to support Wavio and Fonnte structures
+    const rawSender = req.body.from || req.body.sender || req.body.number || req.body.phone || req.body.waNumber || req.body.whatsapp || req.body.data?.from || req.body.data?.sender || req.body.data?.number || req.body.data?.phone || req.body.payload?.from || req.body.payload?.sender || req.body.message?.from || '';
+    const messageText = req.body.message || req.body.text || req.body.body || req.body.msg || req.body.data?.message || req.body.data?.text || req.body.data?.body || req.body.payload?.message?.text || req.body.payload?.body || req.body.message?.text || '';
+    const rawName = req.body.name || req.body.pushname || req.body.senderName || req.body.data?.name || req.body.data?.pushname || req.body.payload?.name || req.body.message?.pushname || '';
+
+    // If both sender and message are missing, it might be an empty ping or non-message event, ignore it safely
+    if (!rawSender && !messageText) {
+      writeLog("[Webhook] Ignored empty or non-message event payload.");
+      return res.json({ success: true, message: "Webhook received, no actionable message data" });
+    }
+
+    const cleanNumber = String(rawSender).replace(/\D/g, '');
+    if (!cleanNumber) {
+      writeLog("[Webhook] Error: No valid phone number in payload");
+      return res.json({ success: true, message: "No valid sender phone" });
+    }
+
+    writeLog(`[Webhook] Parsed incoming message: sender=${cleanNumber}, message="${messageText}", name="${rawName}"`);
+
+    const wita = getWITATime();
+    const dateStr = wita.dateStr; // YYYY-MM-DD
+    const timeStr = `${wita.hour.toString().padStart(2, '0')}:${wita.minute.toString().padStart(2, '0')}:${new Date().getSeconds().toString().padStart(2, '0')}`;
+
+    // Get WA settings to know how to reply back to employee
+    const settingsDocRef = doc(db, 'settings', 'wa_reminder_settings');
+    const settingsSnap = await getDoc(settingsDocRef);
+    const waSettings = settingsSnap.exists() ? settingsSnap.data() : { apiMode: 'wavio', apiToken: 'wavio_a9aef1ead31825220df46c29fecac3738eafda0884c2c950bba2b55a441ce75b' };
+
+    // Search for employee with matching WA number
+    const usersQ = query(collection(db, 'users'), where('role', '==', 'karyawan'));
+    const usersSnap = await getDocs(usersQ);
+    let employee: any = null;
+
+    usersSnap.forEach(d => {
+      const data = d.data();
+      let empWa = String(data.waNumber || '').replace(/\D/g, '');
+      if (empWa.startsWith('0')) {
+        empWa = '62' + empWa.substring(1);
+      } else if (empWa.startsWith('8')) {
+        empWa = '62' + empWa;
+      }
+      
+      let incomingWa = cleanNumber;
+      if (incomingWa.startsWith('0')) {
+        incomingWa = '62' + incomingWa.substring(1);
+      } else if (incomingWa.startsWith('8')) {
+        incomingWa = '62' + incomingWa;
+      }
+
+      if (empWa === incomingWa) {
+        employee = { id: d.id, ...data };
+      }
+    });
+
+    // Case 1: Number not registered as an employee
+    if (!employee) {
+      writeLog(`[Webhook] Sender number ${cleanNumber} is not registered in system.`);
+      
+      // Log as incoming to wa_logs for transparency
+      await addDoc(collection(db, 'wa_logs'), {
+        waNumber: cleanNumber,
+        nama: rawName || 'Tamu / Nomor Baru',
+        message: `[MASUK] ${messageText}`,
+        type: 'incoming',
+        triggerTime: timeStr.substring(0, 5),
+        status: 'Terkirim',
+        timestamp: new Date().toISOString()
+      });
+
+      // Send auto-reply to inform them
+      const replyMsg = `Halo,\n\nNomor WhatsApp Anda (*${cleanNumber}*) belum terdaftar di sistem Presensi US BILIBILI 162.\n\nSilakan hubungi Admin untuk mendaftarkan nomor Anda agar dapat menggunakan fitur presensi WhatsApp ini.\n\nTerima kasih!`;
+      await sendWhatsAppMessageServer(cleanNumber, replyMsg, waSettings);
+      
+      return res.json({ success: true, message: "Sender not registered" });
+    }
+
+    writeLog(`[Webhook] Matched employee: ${employee.nama} (ID: ${employee.id})`);
+
+    // Log the incoming message in Firestore wa_logs
+    await addDoc(collection(db, 'wa_logs'), {
+      waNumber: cleanNumber,
+      nama: employee.nama,
+      message: `[MASUK] ${messageText}`,
+      type: 'incoming',
+      triggerTime: timeStr.substring(0, 5),
+      status: 'Terkirim',
+      timestamp: new Date().toISOString()
+    });
+
+    const msgLower = messageText.toString().toLowerCase().trim();
+
+    // Check if employee intends to Check-In or Check-Out or Leave
+    const isCheckIn = /^(masuk|hadir|absen masuk|presensi masuk|pagi|checkin|check\s*in|in)$/.test(msgLower) || msgLower.includes('masuk') || msgLower.includes('hadir');
+    const isCheckOut = /^(pulang|keluar|sore|absen pulang|presensi pulang|checkout|check\s*out|out)$/.test(msgLower) || msgLower.includes('pulang') || msgLower.includes('keluar');
+    const isLeave = msgLower.includes('izin') || msgLower.includes('sakit') || msgLower.includes('cuti');
+
+    // Retrieve today's attendance record
+    const attRef = collection(db, 'attendance');
+    const q = query(attRef, where('user_id', '==', employee.id), where('tanggal', '==', dateStr));
+    const existing = await getDocs(q);
+
+    // Retrieve office location default coordinates
+    const officeDocRef = doc(db, 'settings', 'office_location');
+    const officeSnap = await getDoc(officeDocRef);
+    let lat = -6.917464; // Default Bandung coordinates
+    let lng = 107.619122; // Default Bandung coordinates
+    let officeName = 'Kantor Pusat';
+    
+    if (officeSnap.exists()) {
+      const officeData = officeSnap.data();
+      if (officeData.offices && officeData.offices.length > 0) {
+        lat = Number(officeData.offices[0].latitude) || lat;
+        lng = Number(officeData.offices[0].longitude) || lng;
+        officeName = officeData.offices[0].name || officeName;
+      } else if (officeData.latitude && officeData.longitude) {
+        lat = Number(officeData.latitude);
+        lng = Number(officeData.longitude);
+        officeName = officeData.name || officeName;
+      }
+    }
+    const address = `Presensi via WhatsApp (Wavio Bot) - Area ${officeName}`;
+
+    // Action A: ABSEN MASUK
+    if (isCheckIn) {
+      if (!existing.empty) {
+        const checkinTime = existing.docs[0].data().jam_masuk;
+        const replyMsg = `Halo *${employee.nama}*,\n\nAnda sudah melakukan absen masuk hari ini pada pukul *${checkinTime} WITA*.\n\nTerima kasih!`;
+        await sendWhatsAppMessageServer(cleanNumber, replyMsg, waSettings);
+        return res.json({ success: true, message: "Already checked in today" });
+      }
+
+      let status = 'Hadir';
+      if (timeStr > '08:00:00') {
+        status = 'Terlambat';
+      }
+
+      await addDoc(attRef, {
+        user_id: employee.id,
+        tanggal: dateStr,
+        jam_masuk: timeStr,
+        latitude_masuk: lat,
+        longitude_masuk: lng,
+        alamat_masuk: address,
+        selfie_masuk: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', // standard profile placeholder
+        status: status,
+        via: 'WhatsApp',
+        created_at: new Date().toISOString()
+      });
+
+      const replyMsg = `Halo *${employee.nama}*,\n\nAbsen *MASUK* Anda berhasil dicatat via WhatsApp!\n\n📅 Tanggal: ${dateStr}\n⏰ Jam: ${timeStr} WITA\n📌 Status: *${status}*\n📍 Lokasi: ${address}\n\nTetap semangat kerja! 💪`;
+      await sendWhatsAppMessageServer(cleanNumber, replyMsg, waSettings);
+      return res.json({ success: true, message: "Check-in recorded" });
+    } 
+    
+    // Action B: ABSEN PULANG
+    if (isCheckOut) {
+      if (existing.empty) {
+        const replyMsg = `Halo *${employee.nama}*,\n\nAnda belum melakukan absen masuk hari ini. Silakan lakukan absen masuk terlebih dahulu dengan mengirim pesan *Masuk* atau *Hadir*.`;
+        await sendWhatsAppMessageServer(cleanNumber, replyMsg, waSettings);
+        return res.json({ success: true, message: "Need to check-in first" });
+      }
+
+      const docToUpdate = existing.docs[0];
+      if (docToUpdate.data().jam_pulang) {
+        const replyMsg = `Halo *${employee.nama}*,\n\nAnda sudah melakukan absen pulang hari ini pada pukul *${docToUpdate.data().jam_pulang} WITA*.\n\nTerima kasih!`;
+        await sendWhatsAppMessageServer(cleanNumber, replyMsg, waSettings);
+        return res.json({ success: true, message: "Already checked out today" });
+      }
+
+      await setDoc(doc(db, 'attendance', docToUpdate.id), {
+        jam_pulang: timeStr,
+        latitude_pulang: lat,
+        longitude_pulang: lng,
+        alamat_pulang: address,
+        selfie_pulang: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200',
+        via: 'WhatsApp',
+        updated_at: new Date().toISOString()
+      }, { merge: true });
+
+      const replyMsg = `Halo *${employee.nama}*,\n\nAbsen *PULANG* Anda berhasil dicatat via WhatsApp!\n\n📅 Tanggal: ${dateStr}\n⏰ Jam: ${timeStr} WITA\n📍 Lokasi: ${address}\n\nSelamat istirahat dan hati-hati di jalan! 🏠🚗`;
+      await sendWhatsAppMessageServer(cleanNumber, replyMsg, waSettings);
+      return res.json({ success: true, message: "Check-out recorded" });
+    }
+
+    // Action C: IZIN/SAKIT/CUTI
+    if (isLeave) {
+      const replyMsg = `Halo *${employee.nama}*,\n\nUntuk pengajuan Izin, Sakit, atau Cuti, silakan ajukan secara resmi melalui *Menu Pengajuan* di aplikasi web *US BILIBILI HADIR 162* agar dapat divalidasi oleh Admin beserta bukti Surat Keterangan / Dokumen pendukung.\n\nTerima kasih!`;
+      await sendWhatsAppMessageServer(cleanNumber, replyMsg, waSettings);
+      return res.json({ success: true, message: "Instructed leave submission" });
+    }
+
+    // Action D: HELP / DEFAULT GUIDE
+    const replyMsg = `Halo *${employee.nama}*,\n\nSelamat datang di Layanan Bot WhatsApp *US BILIBILI HADIR 162*.\n\nAnda dapat melakukan presensi kehadiran secara instan dengan mengirimkan pesan berikut:\n\n*1. Absen Masuk Pagi*\nKirim pesan: *Masuk* atau *Hadir*\n\n*2. Absen Pulang Sore*\nKirim pesan: *Pulang*\n\n*3. Pengajuan Izin/Sakit/Cuti*\nSilakan ajukan langsung melalui aplikasi web kami.\n\nTerima kasih dan selamat bertugas! 💼💪`;
+    await sendWhatsAppMessageServer(cleanNumber, replyMsg, waSettings);
+    return res.json({ success: true, message: "Help menu sent" });
+
+  } catch (error: any) {
+    console.error("[Webhook] Error processing incoming webhook:", error);
+    writeLog(`[Webhook] Error: ${error.message || String(error)}`);
+    return res.status(500).json({ success: false, error: error.message || String(error) });
+  }
+};
+
+// Route mapping for webhook (POST handlers)
+app.post("/", handleIncomingWebhook);
+app.post("/webhook", handleIncomingWebhook);
+app.post("/api/webhook", handleIncomingWebhook);
 
 async function checkAndRunScheduler() {
   if (!db) return;

@@ -40,7 +40,10 @@ import {
   Smartphone,
   CheckCircle2,
   Sliders,
-  Play
+  Play,
+  Database,
+  Cpu,
+  Server
 } from 'lucide-react';
 
 interface OfficeLocation {
@@ -53,12 +56,14 @@ interface OfficeLocation {
 
 interface WASettings {
   enabled: boolean;
-  apiMode: 'simulated' | 'fonnte';
+  apiMode: 'simulated' | 'fonnte' | 'wavio';
   apiToken: string;
   morningHours: number[];
   eveningHours: number[];
   morningTemplate: string;
   eveningTemplate: string;
+  fonnteToken?: string;
+  wavioToken?: string;
 }
 
 interface WALog {
@@ -92,6 +97,8 @@ export default function PengaturanTab() {
     enabled: true,
     apiMode: 'simulated',
     apiToken: '',
+    fonnteToken: '',
+    wavioToken: '',
     morningHours: [5, 6, 7, 8, 9],
     eveningHours: [17, 18, 19, 20, 21, 22],
     morningTemplate: 'Halo *{nama}*, jangan lupa untuk melakukan presensi MASUK hari ini pada jam {jam} WITA melalui aplikasi US BILIBILI HADIR 162. Tetap semangat kerja! 💪',
@@ -149,6 +156,8 @@ export default function PengaturanTab() {
             ...data,
             morningHours: data.morningHours || [5, 6, 7, 8, 9],
             eveningHours: data.eveningHours || [17, 18, 19, 20, 21, 22],
+            fonnteToken: data.fonnteToken || (data.apiMode === 'fonnte' ? data.apiToken : ''),
+            wavioToken: data.wavioToken || (data.apiMode === 'wavio' ? data.apiToken : ''),
           }));
         }
       } catch (error) {
@@ -370,7 +379,13 @@ export default function PengaturanTab() {
     setSaving(true);
     try {
       const docRef = doc(db, 'settings', 'wa_reminder_settings');
-      await setDoc(docRef, waSettings);
+      const activeToken = waSettings.apiMode === 'fonnte' ? (waSettings.fonnteToken || '') : waSettings.apiMode === 'wavio' ? (waSettings.wavioToken || '') : '';
+      const settingsToSave = {
+        ...waSettings,
+        apiToken: activeToken
+      };
+      await setDoc(docRef, settingsToSave);
+      setWaSettings(settingsToSave);
       toast.success('Pengaturan Pengingat WhatsApp berhasil diperbarui');
     } catch (error) {
       console.error('Error saving WA settings:', error);
@@ -440,7 +455,8 @@ export default function PengaturanTab() {
         setSelectedEmployeeId('');
         toast.success(`WhatsApp berhasil dikirim ke ${emp.nama}!`, { id: toastId });
       } else {
-        toast.error(`Fonnte gagal mengirim: ${status}`, { id: toastId });
+        const brand = waSettings.apiMode === 'wavio' ? 'Wavio' : waSettings.apiMode === 'fonnte' ? 'Fonnte' : 'WhatsApp';
+        toast.error(`${brand} gagal mengirim: ${status}`, { id: toastId });
       }
     } catch (error: any) {
       console.error('Error sending manual WA:', error);
@@ -937,31 +953,192 @@ export default function PengaturanTab() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* API Gateway Directory & Configuration Manager */}
+                  <div className="space-y-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Metode Pengiriman</label>
-                      <select
-                        value={waSettings.apiMode}
-                        onChange={e => setWaSettings(prev => ({ ...prev, apiMode: e.target.value as any }))}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-xs font-bold"
-                      >
-                        <option value="simulated">Simulated Mode (Simulasi Log database saja)</option>
-                        <option value="fonnte">Fonnte API Gateway (Pengiriman WA Riil)</option>
-                      </select>
+                      <span className="text-xs font-bold text-slate-700 block uppercase tracking-wider">Daftar API Gateway & Kredensial</span>
+                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                        Konfigurasikan masing-masing API Gateway di bawah ini. Token yang Anda simpan akan dipertahankan masing-masing secara terpisah, sehingga ketika Anda memilih gateway tertentu, data konfigurasi sebelumnya tetap tersimpan dan dapat langsung diterapkan.
+                      </span>
                     </div>
 
-                    {waSettings.apiMode === 'fonnte' && (
-                      <div>
-                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1">Fonnte API Token</label>
-                        <input
-                          type="text"
-                          placeholder="Masukkan token Fonnte Anda"
-                          value={waSettings.apiToken}
-                          onChange={e => setWaSettings(prev => ({ ...prev, apiToken: e.target.value }))}
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-xs font-mono"
-                        />
+                    <div className="grid grid-cols-1 gap-3">
+                      {/* CARD 1: SIMULATED */}
+                      <div className={`p-4 rounded-xl border transition-all duration-200 ${
+                        waSettings.apiMode === 'simulated'
+                          ? 'bg-blue-50/40 border-blue-200 ring-1 ring-blue-100'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <div className={`p-2 rounded-lg mt-0.5 ${
+                              waSettings.apiMode === 'simulated' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              <Database size={16} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-700">Simulated Mode (Simulasi Lokal)</span>
+                                {waSettings.apiMode === 'simulated' ? (
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 font-extrabold text-[9px] rounded-full uppercase tracking-wider">Aktif</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-400 font-bold text-[9px] rounded-full uppercase tracking-wider">Mati</span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-400 block mt-1 leading-normal">
+                                Mencatat simulasi pengiriman pesan ke database log saja tanpa melakukan panggilan API eksternal atau pengiriman pesan WA riil.
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {waSettings.apiMode !== 'simulated' && (
+                            <button
+                              type="button"
+                              onClick={() => setWaSettings(prev => ({ ...prev, apiMode: 'simulated', apiToken: '' }))}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap self-end sm:self-center"
+                            >
+                              Terapkan Gateway
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    )}
+
+                      {/* CARD 2: FONNTE */}
+                      <div className={`p-4 rounded-xl border transition-all duration-200 ${
+                        waSettings.apiMode === 'fonnte'
+                          ? 'bg-emerald-50/40 border-emerald-200 ring-1 ring-emerald-100'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}>
+                        <div className="flex flex-col gap-3.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className={`p-2 rounded-lg mt-0.5 ${
+                                waSettings.apiMode === 'fonnte' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                <Server size={16} />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-slate-700">Fonnte API Gateway</span>
+                                  {waSettings.apiMode === 'fonnte' ? (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 font-extrabold text-[9px] rounded-full uppercase tracking-wider">Aktif</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-400 font-bold text-[9px] rounded-full uppercase tracking-wider">Mati</span>
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-slate-400 block mt-1 leading-normal">
+                                  Layanan API Gateway Fonnte Indonesia untuk mengirim pesan WhatsApp riil. Memerlukan Token API yang valid.
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {waSettings.apiMode !== 'fonnte' && (
+                              <button
+                                type="button"
+                                onClick={() => setWaSettings(prev => ({ ...prev, apiMode: 'fonnte', apiToken: prev.fonnteToken || '' }))}
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap self-end sm:self-center"
+                              >
+                                Terapkan Gateway
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Fonnte Token Config Block */}
+                          <div className="border-t border-slate-100/80 pt-3">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                                Kredensial Token Fonnte (Bisa Diedit & Disimpan)
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Masukkan Token API Fonnte Anda..."
+                                value={waSettings.fonnteToken || ''}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setWaSettings(prev => ({
+                                    ...prev,
+                                    fonnteToken: val,
+                                    ...(prev.apiMode === 'fonnte' ? { apiToken: val } : {})
+                                  }));
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-xs font-mono"
+                              />
+                              <p className="text-[9px] text-slate-400 mt-0.5">
+                                Token ini tersimpan aman di database. Ketik untuk mengedit, lalu tekan tombol <strong>Simpan Pengaturan</strong> di bawah untuk menerapkan perubahan.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* CARD 3: WAVIO */}
+                      <div className={`p-4 rounded-xl border transition-all duration-200 ${
+                        waSettings.apiMode === 'wavio'
+                          ? 'bg-indigo-50/40 border-indigo-200 ring-1 ring-indigo-100'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}>
+                        <div className="flex flex-col gap-3.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className={`p-2 rounded-lg mt-0.5 ${
+                                waSettings.apiMode === 'wavio' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                <Cpu size={16} />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-slate-700">Wavio API Gateway</span>
+                                  {waSettings.apiMode === 'wavio' ? (
+                                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-extrabold text-[9px] rounded-full uppercase tracking-wider">Aktif</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-400 font-bold text-[9px] rounded-full uppercase tracking-wider">Mati</span>
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-slate-400 block mt-1 leading-normal">
+                                  Layanan API Gateway Wavio (shboard.wavio.web.id) untuk mengaktifkan interaksi dua arah dan absen via WhatsApp bot.
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {waSettings.apiMode !== 'wavio' && (
+                              <button
+                                type="button"
+                                onClick={() => setWaSettings(prev => ({ ...prev, apiMode: 'wavio', apiToken: prev.wavioToken || '' }))}
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap self-end sm:self-center"
+                              >
+                                Terapkan Gateway
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Wavio Token Config Block */}
+                          <div className="border-t border-slate-100/80 pt-3">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                                Kredensial Token Wavio (Bisa Diedit & Disimpan)
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Masukkan Token API Wavio Anda..."
+                                value={waSettings.wavioToken || ''}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setWaSettings(prev => ({
+                                    ...prev,
+                                    wavioToken: val,
+                                    ...(prev.apiMode === 'wavio' ? { apiToken: val } : {})
+                                  }));
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 text-xs font-mono"
+                              />
+                              <p className="text-[9px] text-slate-400 mt-0.5">
+                                Token ini tersimpan aman di database. Ketik untuk mengedit, lalu tekan tombol <strong>Simpan Pengaturan</strong> di bawah untuk menerapkan perubahan.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Mandatory WhatsApp Schedule Indicator Card */}
@@ -1253,10 +1430,12 @@ export default function PengaturanTab() {
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
                             log.type === 'auto_pagi' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
                             log.type === 'auto_sore' ? 'bg-teal-50 text-teal-700 border border-teal-100' :
+                            log.type === 'incoming' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
                             'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}>
                             {log.type === 'auto_pagi' ? 'Auto Pagi' :
                              log.type === 'auto_sore' ? 'Auto Sore' :
+                             log.type === 'incoming' ? 'Pesan Masuk' :
                              'Manual'} ({log.triggerTime})
                           </span>
                         </td>

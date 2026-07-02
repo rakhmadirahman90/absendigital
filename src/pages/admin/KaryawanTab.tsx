@@ -10,7 +10,20 @@ export default function KaryawanTab() {
     const [offices, setOffices] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
-    const [formData, setFormData] = useState<any>({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all' });
+    const [formData, setFormData] = useState<any>({
+        waNumber: '',
+        nama: '',
+        role: 'karyawan',
+        divisi: '',
+        jabatan: '',
+        password: '',
+        assignedOfficeId: 'all',
+        gaji_type: 'per_jam',
+        gaji_per_jam: 14000,
+        gaji_bulanan: 0,
+        gaji_lembur_per_jam: 14000,
+        bonus_dryer_1: false
+    });
     const [editingId, setEditingId] = useState<string | null>(null);
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [isExtracting, setIsExtracting] = useState(false);
@@ -252,7 +265,20 @@ export default function KaryawanTab() {
             toast.success('Berhasil menyimpan data karyawan');
             setShowForm(false);
             setEditingId(null);
-            setFormData({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all' });
+            setFormData({
+                waNumber: '',
+                nama: '',
+                role: 'karyawan',
+                divisi: '',
+                jabatan: '',
+                password: '',
+                assignedOfficeId: 'all',
+                gaji_type: 'per_jam',
+                gaji_per_jam: 14000,
+                gaji_bulanan: 0,
+                gaji_lembur_per_jam: 14000,
+                bonus_dryer_1: false
+            });
         } catch (error) {
             console.error(error);
             toast.error('Gagal menyimpan');
@@ -284,7 +310,12 @@ export default function KaryawanTab() {
             divisi: user.divisi || '',
             jabatan: user.jabatan || '',
             password: user.password || '',
-            assignedOfficeId: officeId
+            assignedOfficeId: officeId,
+            gaji_type: user.gaji_type || 'per_jam',
+            gaji_per_jam: user.gaji_per_jam !== undefined && user.gaji_per_jam !== null ? Number(user.gaji_per_jam) : 14000,
+            gaji_bulanan: Number(user.gaji_bulanan) || 0,
+            gaji_lembur_per_jam: user.gaji_lembur_per_jam !== undefined && user.gaji_lembur_per_jam !== null ? Number(user.gaji_lembur_per_jam) : 14000,
+            bonus_dryer_1: !!user.bonus_dryer_1
         });
         setEditingId(user.id);
         setShowForm(true);
@@ -334,7 +365,7 @@ export default function KaryawanTab() {
                         />
                     </label>
                     <button 
-                        onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all' }); }}
+                        onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ waNumber: '', nama: '', role: 'karyawan', divisi: '', jabatan: '', password: '', assignedOfficeId: 'all', gaji_type: 'per_jam', gaji_per_jam: 14000, gaji_bulanan: 0, gaji_lembur_per_jam: 14000, bonus_dryer_1: false }); }}
                         className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 active:scale-95 transition-all shadow-sm shadow-blue-500/15 cursor-pointer"
                     >
                         <Plus size={16} />
@@ -387,6 +418,78 @@ export default function KaryawanTab() {
                                 ))}
                             </select>
                         </div>
+
+                        {/* Divider Gaji */}
+                        <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
+                            <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                                <span>💰</span> Pengaturan Gaji & Pengupahan
+                            </h5>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Sistem Gaji</label>
+                            <select 
+                                value={formData.gaji_type || 'per_jam'} 
+                                onChange={e => setFormData({...formData, gaji_type: e.target.value})} 
+                                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
+                            >
+                                <option value="per_jam">Gaji Per Jam (Hourly)</option>
+                                <option value="per_bulan">Gaji Per Bulan (Monthly)</option>
+                            </select>
+                        </div>
+
+                        {formData.gaji_type === 'per_jam' ? (
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Tarif Gaji Per Jam (Rupiah)</label>
+                                <input 
+                                    type="number" 
+                                    value={formData.gaji_per_jam || 0} 
+                                    onChange={e => setFormData({...formData, gaji_per_jam: Number(e.target.value)})} 
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm" 
+                                    placeholder="Contoh: 14000"
+                                    min="0"
+                                />
+                            </div>
+                        ) : (
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Gaji Pokok Per Bulan (Rupiah)</label>
+                                <input 
+                                    type="number" 
+                                    value={formData.gaji_bulanan || 0} 
+                                    onChange={e => setFormData({...formData, gaji_bulanan: Number(e.target.value)})} 
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm" 
+                                    placeholder="Contoh: 3000000"
+                                    min="0"
+                                />
+                            </div>
+                        )}
+
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Tarif Lembur Per Jam (Rupiah)</label>
+                            <input 
+                                type="number" 
+                                value={formData.gaji_lembur_per_jam || 0} 
+                                onChange={e => setFormData({...formData, gaji_lembur_per_jam: Number(e.target.value)})} 
+                                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm" 
+                                placeholder="Contoh: 14000"
+                                min="0"
+                            />
+                        </div>
+
+                        <div className="flex items-center mt-6">
+                            <label className="flex items-center space-x-3 cursor-pointer select-none">
+                                <input 
+                                    type="checkbox" 
+                                    checked={!!formData.bonus_dryer_1} 
+                                    onChange={e => setFormData({...formData, bonus_dryer_1: e.target.checked})} 
+                                    className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500/20"
+                                />
+                                <div className="text-sm">
+                                    <span className="font-medium text-slate-700 block">Bonus Dryer 1 Aktif</span>
+                                    <span className="text-xs text-slate-400 block mt-0.5">+Rp 10.000 per hari kerja jika mesin Dryer 1 menyala</span>
+                                </div>
+                            </label>
+                        </div>
                         <div className="md:col-span-2 flex justify-end space-x-3 mt-4">
                             <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 border border-slate-300 rounded-lg font-medium">Batal</button>
                             <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">Simpan</button>
@@ -406,6 +509,7 @@ export default function KaryawanTab() {
                                 <th className="p-4 text-sm font-medium text-slate-500">Divisi</th>
                                 <th className="p-4 text-sm font-medium text-slate-500">Jabatan</th>
                                 <th className="p-4 text-sm font-medium text-slate-500">Lokasi Kantor</th>
+                                <th className="p-4 text-sm font-medium text-slate-500">Konfigurasi Gaji</th>
                                 <th className="p-4 text-sm font-medium text-slate-500">Role</th>
                                 <th className="p-4 text-sm font-medium text-slate-500 text-right">Aksi</th>
                             </tr>
@@ -432,6 +536,26 @@ export default function KaryawanTab() {
                                                     <Building size={12} className="text-slate-400 shrink-0" />
                                                     <span>{officeLabel}</span>
                                                 </span>
+                                            </td>
+                                            <td className="p-4 text-sm text-slate-600">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="font-bold text-slate-700 text-[10px] uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded w-max">
+                                                        {user.gaji_type === 'per_bulan' ? 'Bulanan' : 'Per Jam'}
+                                                    </span>
+                                                    <span className="text-xs text-slate-600 font-mono font-bold mt-1">
+                                                        {user.gaji_type === 'per_bulan' 
+                                                            ? `Pokok: Rp ${(user.gaji_bulanan || 0).toLocaleString('id-ID')}`
+                                                            : `Tarif: Rp ${(user.gaji_per_jam !== undefined && user.gaji_per_jam !== null ? user.gaji_per_jam : 14000).toLocaleString('id-ID')}/jam`}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-400 font-mono">
+                                                        Lembur: Rp ${(user.gaji_lembur_per_jam !== undefined && user.gaji_lembur_per_jam !== null ? user.gaji_lembur_per_jam : 14000).toLocaleString('id-ID')}/jam
+                                                    </span>
+                                                    {user.bonus_dryer_1 && (
+                                                        <span className="inline-block mt-1 text-[9px] font-extrabold text-emerald-600 uppercase tracking-wide bg-emerald-50 px-1.5 py-0.5 rounded w-max">
+                                                            +10k Dryer 1
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-4 text-sm text-slate-600">
                                                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
@@ -475,14 +599,20 @@ export default function KaryawanTab() {
                                             {user.role}
                                         </span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100/70 text-xs">
+                                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100/70 text-[11px]">
                                         <div>
-                                            <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">Divisi</span>
+                                            <span className="text-[9px] text-slate-400 block font-semibold uppercase tracking-wider">Divisi</span>
                                             <span className="font-semibold text-slate-700 mt-0.5 block">{user.divisi || '-'}</span>
                                         </div>
                                         <div>
-                                            <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">Jabatan</span>
+                                            <span className="text-[9px] text-slate-400 block font-semibold uppercase tracking-wider">Jabatan</span>
                                             <span className="font-semibold text-slate-700 mt-0.5 block">{user.jabatan || '-'}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[9px] text-slate-400 block font-semibold uppercase tracking-wider">Sistem Gaji</span>
+                                            <span className="font-bold text-slate-700 mt-0.5 block font-mono">
+                                                {user.gaji_type === 'per_bulan' ? 'Bulanan' : 'Per Jam'}
+                                            </span>
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-center text-xs">
