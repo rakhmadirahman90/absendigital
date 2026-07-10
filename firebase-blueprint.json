@@ -10,7 +10,9 @@
         "nama": { "type": "string" },
         "role": { "type": "string" },
         "jabatan": { "type": "string" },
-        "divisi": { "type": "string" }
+        "divisi": { "type": "string" },
+        "pin": { "type": "string" },
+        "loginMethod": { "type": "string" }
       }
     },
     "Attendance": {

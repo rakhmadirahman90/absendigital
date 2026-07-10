@@ -8,6 +8,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Toaster } from 'react-hot-toast';
 import Login from './pages/Login';
+import LoginPreference from './pages/LoginPreference';
 import Dashboard from './pages/Dashboard';
 import CheckInOut from './pages/CheckInOut';
 import History from './pages/History';
@@ -22,16 +23,28 @@ import Layout from './components/Layout';
 const ProtectedRoute = ({ 
   children, 
   adminOnly = false, 
-  userOnly = false 
+  userOnly = false,
+  isOnboarding = false
 }: { 
   children: React.ReactNode, 
   adminOnly?: boolean, 
-  userOnly?: boolean 
+  userOnly?: boolean,
+  isOnboarding?: boolean
 }) => {
   const { user, dbUser } = useAuth();
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // If user has NOT set their login method yet, force redirect to onboarding preference page
+  if (dbUser && !dbUser.loginMethod && !isOnboarding) {
+    return <Navigate to="/login-preference" replace />;
+  }
+
+  // If user ALREADY set their login method, don't let them revisit onboarding
+  if (dbUser && dbUser.loginMethod && isOnboarding) {
+    return <Navigate to="/" replace />;
   }
 
   if (adminOnly && dbUser?.role !== 'admin') {
@@ -60,6 +73,7 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/login-preference" element={<ProtectedRoute isOnboarding><LoginPreference /></ProtectedRoute>} />
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/" element={<DashboardWrapper />} />
             <Route path="/checkinout" element={<ProtectedRoute userOnly><CheckInOut /></ProtectedRoute>} />

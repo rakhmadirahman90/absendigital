@@ -66,6 +66,8 @@ export default function Dashboard() {
   const [editNama, setEditNama] = useState('');
   const [editWaNumber, setEditWaNumber] = useState('');
   const [editPassword, setEditPassword] = useState('');
+  const [editLoginMethod, setEditLoginMethod] = useState<'password' | 'pin'>('password');
+  const [editPin, setEditPin] = useState('');
   const [updating, setUpdating] = useState(false);
 
   // Dynamic Daytime/Nighttime State (auto-detect based on local system time)
@@ -373,11 +375,23 @@ export default function Dashboard() {
     setUpdating(true);
     try {
       const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
+      const updateData: any = {
         nama: editNama.trim(),
         waNumber: editWaNumber.trim(),
-        password: editPassword.trim()
-      });
+        password: editPassword.trim(),
+        loginMethod: editLoginMethod
+      };
+      
+      if (editLoginMethod === 'pin') {
+        if (editPin.length !== 6 || !/^\d+$/.test(editPin)) {
+          toast.error('PIN harus terdiri dari 6 angka');
+          setUpdating(false);
+          return;
+        }
+        updateData.pin = editPin;
+      }
+
+      await updateDoc(userDocRef, updateData);
       toast.success('Profil Anda berhasil diperbarui!');
       setIsEditing(false);
     } catch (error) {
@@ -1037,6 +1051,8 @@ export default function Dashboard() {
                 setEditNama(dbUser.nama || '');
                 setEditWaNumber(dbUser.waNumber || '');
                 setEditPassword(dbUser.password || '');
+                setEditLoginMethod(dbUser.loginMethod || 'password');
+                setEditPin(dbUser.pin || '');
                 setIsEditing(true);
               }}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer focus:outline-none ${isDaytime ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-indigo-950/80 text-indigo-400 hover:bg-indigo-900 border border-indigo-500/20'}`}
@@ -1076,6 +1092,12 @@ export default function Dashboard() {
                   {dbUser.role || 'Karyawan'}
                 </span>
               </div>
+            </div>
+            <div className={`p-4 rounded-xl border transition-all ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
+              <span className="text-xs text-slate-400 font-medium block mb-1">Preferensi Login Utama</span>
+              <span className={`text-sm font-semibold ${themeTextVal}`}>
+                {dbUser.loginMethod === 'pin' ? 'PIN 6-Digit (Aktif)' : 'Kata Sandi Teks'}
+              </span>
             </div>
           </div>
         ) : (
@@ -1124,6 +1146,34 @@ export default function Dashboard() {
                   />
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1.5">Kata sandi ini digunakan untuk masuk ke sistem menggunakan nomor WhatsApp Anda.</p>
+              </div>
+
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${themeTextLabel}`}>Metode Login Utama</label>
+                  <select
+                    value={editLoginMethod}
+                    onChange={(e) => setEditLoginMethod(e.target.value as 'password' | 'pin')}
+                    className={`w-full px-4 py-2.5 rounded-xl outline-none text-sm font-medium transition-all border ${themeInputBg}`}
+                  >
+                    <option value="password">Kata Sandi Teks</option>
+                    <option value="pin">PIN 6-Digit</option>
+                  </select>
+                </div>
+                {editLoginMethod === 'pin' && (
+                  <div>
+                    <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${themeTextLabel}`}>PIN 6-Digit Baru</label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      required
+                      value={editPin}
+                      onChange={(e) => setEditPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Masukkan 6 angka PIN baru"
+                      className={`w-full px-4 py-2.5 rounded-xl outline-none text-sm font-medium transition-all border ${themeInputBg} font-mono`}
+                    />
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex justify-end space-x-3 pt-2">

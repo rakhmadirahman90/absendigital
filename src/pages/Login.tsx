@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { doc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Navigate } from 'react-router-dom';
@@ -19,7 +19,9 @@ import {
   Eye, 
   EyeOff,
   Cpu,
-  BadgeCheck
+  BadgeCheck,
+  X,
+  Keyboard
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -34,9 +36,76 @@ export default function Login() {
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const { user, login } = useAuth();
 
+  // Step-by-step Login preferences state
+  const [loginStep, setLoginStep] = useState<'input_wa' | 'password' | 'pin'>('input_wa');
+  const [pin, setPin] = useState('');
+  const [detectedUser, setDetectedUser] = useState<any>(null);
+
   if (user) {
     return <Navigate to="/" replace />;
   }
+
+  // Keyboard listener for PIN entry
+  useEffect(() => {
+    if (loginStep !== 'pin') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') {
+        if (pin.length < 6) {
+          setPin(prev => prev + e.key);
+        }
+      } else if (e.key === 'Backspace') {
+        setPin(prev => prev.slice(0, -1));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [loginStep, pin]);
+
+  // Auto PIN login validation when length reaches 6 digits
+  useEffect(() => {
+    if (loginStep === 'pin' && pin.length === 6) {
+      const timer = setTimeout(() => {
+        handlePinLogin();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [pin, loginStep]);
+
+  const handlePinLogin = async () => {
+    if (!detectedUser) return;
+    setError('');
+    setLoading(true);
+    try {
+      if (detectedUser.pin === pin) {
+        toast.success(`Selamat datang kembali, ${detectedUser.nama || 'Karyawan'}!`);
+        login({ uid: detectedUser.uid, ...detectedUser });
+      } else {
+        throw new Error('PIN yang Anda masukkan salah.');
+      }
+    } catch (err: any) {
+      setPin('');
+      setError(err.message || 'Autentikasi PIN gagal.');
+      toast.error(err.message || 'Autentikasi PIN gagal.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNumpadClick = (num: string) => {
+    if (pin.length < 6) {
+      setPin(prev => prev + num);
+    }
+  };
+
+  const handleNumpadBackspace = () => {
+    setPin(prev => prev.slice(0, -1));
+  };
+
+  const handleNumpadClear = () => {
+    setPin('');
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +121,7 @@ export default function Login() {
          setMessage(infoMsg);
          toast.success(infoMsg, { duration: 5000 });
          setIsForgotPassword(false);
+         setLoginStep('input_wa');
       } else if (isRegister) {
          const q = query(collection(db, "users"), where("waNumber", "==", cleanWaNumber));
          const querySnapshot = await getDocs(q);
@@ -76,22 +146,39 @@ export default function Login() {
          toast.success('Pendaftaran berhasil! Selamat datang.');
          login({ uid: userId, ...userData });
       } else {
-         const q = query(collection(db, "users"), where("waNumber", "==", cleanWaNumber));
-         const querySnapshot = await getDocs(q);
-         
-         if (querySnapshot.empty) {
-            throw new Error('Nomor WA atau password salah.');
+         // Flow login: Step-by-step
+         if (loginStep === 'input_wa') {
+            if (!cleanWaNumber) {
+               throw new Error('Silakan masukkan nomor WhatsApp Anda.');
+            }
+            const q = query(collection(db, "users"), where("waNumber", "==", cleanWaNumber));
+            const querySnapshot = await getDocs(q);
+            
+            if (querySnapshot.empty) {
+               throw new Error('Nomor WA tidak terdaftar. Silakan registrasi terlebih dahulu.');
+            }
+
+            const userDoc = querySnapshot.docs[0];
+            const userData = { uid: userDoc.id, ...userDoc.data() } as any;
+            setDetectedUser(userData);
+
+            if (userData.loginMethod === 'pin') {
+               setLoginStep('pin');
+               toast.success('Nomor dikenali. Silakan masukkan PIN 6-Digit Anda.');
+            } else {
+               setLoginStep('password');
+            }
+         } else if (loginStep === 'password') {
+            if (!detectedUser) {
+               throw new Error('Sesi login kedaluwarsa. Silakan ulangi.');
+            }
+            if (detectedUser.password !== password) {
+               throw new Error('Password salah.');
+            }
+            
+            toast.success(`Selamat datang kembali, ${detectedUser.nama || 'Karyawan'}!`);
+            login({ uid: detectedUser.uid, ...detectedUser });
          }
-         
-         const userDoc = querySnapshot.docs[0];
-         const userData = userDoc.data();
-         
-         if (userData.password !== password) {
-            throw new Error('Nomor WA atau password salah.');
-         }
-         
-         toast.success(`Selamat datang kembali, ${userData.nama || 'Karyawan'}!`);
-         login({ uid: userDoc.id, ...userData });
       }
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan.');
@@ -165,72 +252,256 @@ export default function Login() {
         {/* Input Form */}
         <form onSubmit={handleAuth} className="space-y-5">
           
-          {/* WA Input */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5 font-mono flex items-center gap-1">
-              <Smartphone size={13} className="text-blue-600" />
-              <span>Nomor WhatsApp</span>
-            </label>
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
-                <Smartphone size={18} />
-              </div>
-              <input 
-                type="tel" 
-                required
-                value={waNumber}
-                onChange={(e) => setWaNumber(e.target.value)}
-                className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 text-sm pl-11 pr-4 py-3.5 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all duration-300 font-mono shadow-sm"
-                placeholder="0812XXXXXXXX"
-              />
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-500/5 to-sky-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none -z-10" />
-            </div>
-          </div>
-
-          {/* Password Input */}
-          {!isForgotPassword && (
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 font-mono flex items-center gap-1">
-                  <Lock size={13} className="text-blue-600" />
-                  <span>Sandi Keamanan</span>
+          {/* REGISTRATION OR FORGOT PASSWORD FLOW (STANDALONE) */}
+          {(isRegister || isForgotPassword) ? (
+            <>
+              {/* WA Input */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5 font-mono flex items-center gap-1">
+                  <Smartphone size={13} className="text-blue-600" />
+                  <span>Nomor WhatsApp</span>
                 </label>
-                {!isRegister && (
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      setIsForgotPassword(true);
-                      setError('');
-                      setMessage('');
-                    }}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-bold font-mono tracking-wide transition-colors"
-                  >
-                    Lupa Sandi?
-                  </button>
-                )}
-              </div>
-              <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
-                  <KeyRound size={18} />
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                    <Smartphone size={18} />
+                  </div>
+                  <input 
+                    type="tel" 
+                    required
+                    value={waNumber}
+                    onChange={(e) => setWaNumber(e.target.value)}
+                    className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 text-sm pl-11 pr-4 py-3.5 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all duration-300 font-mono shadow-sm"
+                    placeholder="0812XXXXXXXX"
+                  />
                 </div>
-                <input 
-                  type={showPassword ? "text" : "password"} 
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 text-sm pl-11 pr-11 py-3.5 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all duration-300 shadow-sm"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-500/5 to-sky-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none -z-10" />
               </div>
-            </div>
+
+              {/* Password Input */}
+              {!isForgotPassword && (
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 font-mono flex items-center gap-1">
+                      <Lock size={13} className="text-blue-600" />
+                      <span>Sandi Keamanan</span>
+                    </label>
+                  </div>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                      <KeyRound size={18} />
+                    </div>
+                    <input 
+                      type={showPassword ? "text" : "password"} 
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 text-sm pl-11 pr-11 py-3.5 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all duration-300 shadow-sm"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            /* STEP BY STEP LOGIN FLOW */
+            <>
+              {loginStep === 'input_wa' && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5 font-mono flex items-center gap-1">
+                    <Smartphone size={13} className="text-blue-600" />
+                    <span>Nomor WhatsApp</span>
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                      <Smartphone size={18} />
+                    </div>
+                    <input 
+                      type="tel" 
+                      required
+                      value={waNumber}
+                      onChange={(e) => setWaNumber(e.target.value)}
+                      className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 text-sm pl-11 pr-4 py-3.5 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all duration-300 font-mono shadow-sm"
+                      placeholder="0812XXXXXXXX"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {loginStep === 'password' && (
+                <div className="space-y-4">
+                  {/* Read-only WA Badge */}
+                  <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-3 flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <Smartphone size={16} className="text-blue-600" />
+                      <span className="text-sm font-mono font-bold text-slate-800">{waNumber}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginStep('input_wa');
+                        setDetectedUser(null);
+                        setPassword('');
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-bold transition-all"
+                    >
+                      Ubah Nomor
+                    </button>
+                  </div>
+
+                  {/* Password Input */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 font-mono flex items-center gap-1">
+                        <Lock size={13} className="text-blue-600" />
+                        <span>Sandi Keamanan</span>
+                      </label>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setIsForgotPassword(true);
+                          setError('');
+                          setMessage('');
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-bold font-mono tracking-wide transition-colors"
+                      >
+                        Lupa Sandi?
+                      </button>
+                    </div>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-600 transition-colors">
+                        <KeyRound size={18} />
+                      </div>
+                      <input 
+                        type={showPassword ? "text" : "password"} 
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 text-sm pl-11 pr-11 py-3.5 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 focus:outline-none transition-all duration-300 shadow-sm"
+                        placeholder="••••••••"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Option to use PIN if user has configured one */}
+                  {detectedUser?.pin && (
+                    <button
+                      type="button"
+                      onClick={() => setLoginStep('pin')}
+                      className="w-full text-center text-xs text-blue-600 hover:text-blue-700 font-bold py-1.5 transition-colors block"
+                    >
+                      Masuk menggunakan PIN 6-Digit
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {loginStep === 'pin' && (
+                <div className="space-y-5">
+                  {/* Read-only WA Badge */}
+                  <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-3 flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <Smartphone size={16} className="text-blue-600" />
+                      <span className="text-sm font-mono font-bold text-slate-800">{waNumber}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginStep('input_wa');
+                        setDetectedUser(null);
+                        setPin('');
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-bold transition-all"
+                    >
+                      Ubah Nomor
+                    </button>
+                  </div>
+
+                  {/* PIN dots representation */}
+                  <div className="text-center">
+                    <span className="text-xs text-slate-500 font-medium tracking-wide">Masukkan PIN 6-Digit Anda</span>
+                    <div className="flex justify-center items-center gap-3.5 py-4">
+                      {[0, 1, 2, 3, 4, 5].map((idx) => {
+                        const filled = idx < pin.length;
+                        return (
+                          <div
+                            key={idx}
+                            className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-300 ${
+                              filled
+                                ? 'bg-blue-600 border-blue-600 scale-125 shadow-md shadow-blue-400/50'
+                                : 'border-slate-300 bg-transparent'
+                            }`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* SLEEK NUMPAD VISUAL */}
+                  <div className="max-w-[280px] mx-auto">
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => handleNumpadClick(num)}
+                          className="h-12 bg-slate-50 hover:bg-blue-50 border border-slate-200/50 hover:border-blue-200 active:scale-95 text-slate-800 hover:text-blue-700 font-extrabold text-base rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shadow-sm"
+                        >
+                          {num}
+                        </button>
+                      ))}
+                      
+                      {/* Clear Button */}
+                      <button
+                        type="button"
+                        onClick={handleNumpadClear}
+                        className="h-12 text-slate-400 hover:text-red-500 hover:bg-red-50 active:scale-95 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer"
+                      >
+                        <X size={16} />
+                      </button>
+
+                      {/* 0 Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleNumpadClick('0')}
+                        className="h-12 bg-slate-50 hover:bg-blue-50 border border-slate-200/50 hover:border-blue-200 active:scale-95 text-slate-800 hover:text-blue-700 font-extrabold text-base rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer shadow-sm"
+                      >
+                        0
+                      </button>
+
+                      {/* Backspace Button */}
+                      <button
+                        type="button"
+                        onClick={handleNumpadBackspace}
+                        className="h-12 text-slate-400 hover:text-slate-700 hover:bg-slate-100 active:scale-95 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer"
+                      >
+                        <Keyboard size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setLoginStep('password')}
+                    className="w-full text-center text-xs text-blue-600 hover:text-blue-700 font-bold py-1.5 transition-colors block"
+                  >
+                    Masuk menggunakan Kata Sandi
+                  </button>
+                </div>
+              )}
+            </>
           )}
           
           {/* Error and Info Alerts */}
@@ -247,27 +518,37 @@ export default function Login() {
             </div>
           )}
           
-          {/* Submit Button */}
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full relative group overflow-hidden bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 text-white font-bold font-display tracking-wider py-4 rounded-2xl hover:shadow-[0_12px_24px_rgba(37,99,235,0.25)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer uppercase text-xs shadow-md"
-          >
-            {/* Glossy glare effect */}
-            <div className="absolute inset-0 w-1/2 h-full bg-white/20 transform -skew-x-12 -translate-x-full group-hover:animate-[shine_1.5s_ease-in-out_infinite]" />
-            
-            {loading ? (
-              <>
-                <RefreshCw size={16} className="animate-spin text-white" />
-                <span>Mensinkronisasi...</span>
-              </>
-            ) : (
-              <>
-                <span>{isForgotPassword ? 'Kirim Reset Kunci' : isRegister ? 'Daftar Sistem' : 'Otentikasi Masuk'}</span>
-                <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
-              </>
-            )}
-          </button>
+          {/* Submit Button (Hidden on PIN screen, since PIN auto-submits) */}
+          {loginStep !== 'pin' && (
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full relative group overflow-hidden bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 text-white font-bold font-display tracking-wider py-4 rounded-2xl hover:shadow-[0_12px_24px_rgba(37,99,235,0.25)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer uppercase text-xs shadow-md"
+            >
+              {/* Glossy glare effect */}
+              <div className="absolute inset-0 w-1/2 h-full bg-white/20 transform -skew-x-12 -translate-x-full group-hover:animate-[shine_1.5s_ease-in-out_infinite]" />
+              
+              {loading ? (
+                <>
+                  <RefreshCw size={16} className="animate-spin text-white" />
+                  <span>Mensinkronisasi...</span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {isForgotPassword 
+                      ? 'Kirim Reset Kunci' 
+                      : isRegister 
+                        ? 'Daftar Sistem' 
+                        : loginStep === 'input_wa' 
+                          ? 'Lanjutkan' 
+                          : 'Otentikasi Masuk'}
+                  </span>
+                  <ArrowRight size={15} className="group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
+            </button>
+          )}
         </form>
         
         {/* Toggle Footer */}
