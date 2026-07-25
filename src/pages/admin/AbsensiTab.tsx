@@ -920,18 +920,43 @@ export default function AbsensiTab() {
                 let lemburHours = 0;
                 let isLemburShift = !!rec.is_lembur;
 
+                const isJuned = emp?.nama?.toLowerCase().includes('juned') || false;
+                const isAsma = emp?.nama?.toLowerCase().includes('asma') || false;
+
                 if (isLemburShift) {
                     lemburHours = netHours;
                 } else {
-                    regularHours = netHours;
-                    lemburHours = 0;
+                    if (isJuned) {
+                        if (outTime > 17) {
+                            const ovt = Math.max(0, outTime - 17);
+                            lemburHours = Math.min(netHours, ovt);
+                            regularHours = Math.max(0, netHours - lemburHours);
+                        } else {
+                            regularHours = netHours;
+                            lemburHours = 0;
+                        }
+                    } else if (isAsma) {
+                        if (outTime > 18) {
+                            const ovt = Math.max(0, outTime - 18);
+                            lemburHours = Math.min(netHours, ovt);
+                            regularHours = Math.max(0, netHours - lemburHours);
+                        } else {
+                            regularHours = netHours;
+                            lemburHours = 0;
+                        }
+                    } else {
+                        regularHours = netHours;
+                        lemburHours = 0;
+                    }
                 }
 
                 totalRegularHours += regularHours;
                 totalLemburHours += lemburHours;
 
                 const regRate = emp.gaji_type === 'per_bulan' ? 0 : (emp.gaji_per_jam !== undefined ? Number(emp.gaji_per_jam) : 14000);
-                const lemburRate = emp.gaji_lembur_per_jam !== undefined ? Number(emp.gaji_lembur_per_jam) : 14000;
+                let lemburRate = emp.gaji_lembur_per_jam !== undefined ? Number(emp.gaji_lembur_per_jam) : 14000;
+                if (isJuned) lemburRate = 15000;
+                if (isAsma) lemburRate = 16000;
 
                 const regPay = regularHours * regRate;
                 const lemburPay = lemburHours * lemburRate;
@@ -961,7 +986,11 @@ export default function AbsensiTab() {
 
             const basePay = emp.gaji_type === 'per_bulan' ? (Number(emp.gaji_bulanan) || 0) : 0;
             const regRate = emp.gaji_type === 'per_bulan' ? 0 : (emp.gaji_per_jam !== undefined ? Number(emp.gaji_per_jam) : 14000);
-            const lemburRate = emp.gaji_lembur_per_jam !== undefined ? Number(emp.gaji_lembur_per_jam) : 14000;
+            const isJuned = emp?.nama?.toLowerCase().includes('juned') || false;
+            const isAsma = emp?.nama?.toLowerCase().includes('asma') || false;
+            let lemburRate = emp.gaji_lembur_per_jam !== undefined ? Number(emp.gaji_lembur_per_jam) : 14000;
+            if (isJuned) lemburRate = 15000;
+            if (isAsma) lemburRate = 16000;
 
             const totalRegPay = totalRegularHours * regRate;
             const totalLemburPay = totalLemburHours * lemburRate;
@@ -1277,6 +1306,10 @@ export default function AbsensiTab() {
 
         const emp = payroll.employee;
         const currentMonthName = format(new Date(selectedMonth + "-02"), 'MMMM yyyy', { locale: id });
+        
+        const isJunedPrint = emp.nama?.toLowerCase().includes('juned') || false;
+        const isAsmaPrint = emp.nama?.toLowerCase().includes('asma') || false;
+        const printLemburRate = isJunedPrint ? 15000 : (isAsmaPrint ? 16000 : (emp.gaji_lembur_per_jam || 14000));
 
         printWindow.document.write(`
             <html>
@@ -1396,7 +1429,7 @@ export default function AbsensiTab() {
                         \`}
                         <tr>
                             <td>Uang Lembur (Overtime)</td>
-                            <td>\${payroll.totalLemburHours.toFixed(1)} Jam × Rp \${(emp.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')}/jam</td>
+                            <td>\${payroll.totalLemburHours.toFixed(1)} Jam × Rp \${printLemburRate.toLocaleString('id-ID')}/jam</td>
                             <td style="text-align: right;">Rp \${payroll.totalLemburPay.toLocaleString('id-ID')}</td>
                         </tr>
                         \${emp.bonus_dryer_1 ? \`
@@ -3127,7 +3160,11 @@ export default function AbsensiTab() {
                                     ) : (
                                         <div>Tarif Biasa: <strong className="text-slate-800">Rp {(selectedEmpPayrollDetail.employee.gaji_per_jam || 14000).toLocaleString('id-ID')} / jam</strong></div>
                                     )}
-                                    <div>Tarif Lembur: <strong className="text-slate-800">Rp {(selectedEmpPayrollDetail.employee.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')} / jam</strong></div>
+                                    <div>Tarif Lembur: <strong className="text-slate-800">Rp {(
+                                        selectedEmpPayrollDetail.employee.nama?.toLowerCase().includes('juned') ? 15000 :
+                                        selectedEmpPayrollDetail.employee.nama?.toLowerCase().includes('asma') ? 16000 :
+                                        (selectedEmpPayrollDetail.employee.gaji_lembur_per_jam || 14000)
+                                    ).toLocaleString('id-ID')} / jam</strong></div>
                                     {selectedEmpPayrollDetail.employee.bonus_dryer_1 && (
                                         <div>Bonus Dryer 1: <strong className="text-emerald-700">Aktif (Rp 10.000 / kehadiran dryer menyala)</strong></div>
                                     )}

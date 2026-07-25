@@ -178,11 +178,38 @@ export default function Dashboard() {
       const rawHours = Math.max(0, outTime - inTime);
       const netHours = Math.max(0, rawHours - breakHours);
 
+      const isJuned = dbUser?.nama?.toLowerCase().includes('juned') || false;
+      const isAsma = dbUser?.nama?.toLowerCase().includes('asma') || false;
+
+      let recordRegHrs = 0;
+      let recordLembHrs = 0;
+
       if (rec.is_lembur) {
-          lembHrs += netHours;
+          recordLembHrs = netHours;
       } else {
-          regHrs += netHours;
+          if (isJuned) {
+              if (outTime > 17) {
+                  const ovt = Math.max(0, outTime - 17);
+                  recordLembHrs = Math.min(netHours, ovt);
+                  recordRegHrs = Math.max(0, netHours - recordLembHrs);
+              } else {
+                  recordRegHrs = netHours;
+              }
+          } else if (isAsma) {
+              if (outTime > 18) {
+                  const ovt = Math.max(0, outTime - 18);
+                  recordLembHrs = Math.min(netHours, ovt);
+                  recordRegHrs = Math.max(0, netHours - recordLembHrs);
+              } else {
+                  recordRegHrs = netHours;
+              }
+          } else {
+              recordRegHrs = netHours;
+          }
       }
+
+      regHrs += recordRegHrs;
+      lembHrs += recordLembHrs;
 
       if (rec.dryer_menyala && dbUser?.bonus_dryer_1) {
           dryerBns += 10000;
@@ -191,7 +218,11 @@ export default function Dashboard() {
 
     const isMonthly = dbUser?.gaji_type === 'per_bulan';
     const regRate = isMonthly ? 0 : (dbUser?.gaji_per_jam !== undefined ? Number(dbUser.gaji_per_jam) : 14000);
-    const lemburRate = dbUser?.gaji_lembur_per_jam !== undefined ? Number(dbUser.gaji_lembur_per_jam) : 14000;
+    const isJuned = dbUser?.nama?.toLowerCase().includes('juned') || false;
+    const isAsma = dbUser?.nama?.toLowerCase().includes('asma') || false;
+    let lemburRate = dbUser?.gaji_lembur_per_jam !== undefined ? Number(dbUser.gaji_lembur_per_jam) : 14000;
+    if (isJuned) lemburRate = 15000;
+    if (isAsma) lemburRate = 16000;
     const basePay = isMonthly ? (Number(dbUser.gaji_bulanan) || 0) : 0;
 
     const earnedRegPay = regHrs * regRate;
@@ -417,7 +448,9 @@ export default function Dashboard() {
     const divisi = slip.employee_divisi || dbUser?.divisi || '-';
     const isMonthly = (slip.employee_gaji_type || dbUser?.gaji_type) === 'per_bulan';
     const ratePerJam = slip.employee_gaji_per_jam || dbUser?.gaji_per_jam || 14000;
-    const rateLembur = slip.employee_gaji_lembur_per_jam || dbUser?.gaji_lembur_per_jam || 14000;
+    const isJunedPrint = nama?.toLowerCase().includes('juned') || false;
+    const isAsmaPrint = nama?.toLowerCase().includes('asma') || false;
+    const rateLembur = isJunedPrint ? 15000 : (isAsmaPrint ? 16000 : (slip.employee_gaji_lembur_per_jam || dbUser?.gaji_lembur_per_jam || 14000));
     const hasBonusDryer = slip.employee_bonus_dryer_1 !== undefined ? slip.employee_bonus_dryer_1 : dbUser?.bonus_dryer_1;
 
     // Sum up the grand total salary
@@ -927,7 +960,11 @@ export default function Dashboard() {
                   {(mySalaryStats.totalLemburHours || 0).toFixed(1)} <span className="text-xs font-sans font-normal text-slate-400">Jam</span>
                 </span>
                 <span className="text-[10px] text-slate-400 block mt-1">
-                  Tarif: Rp {(dbUser.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')}/jam
+                  Tarif: Rp {(
+                    dbUser.nama?.toLowerCase().includes('juned') ? 15000 :
+                    dbUser.nama?.toLowerCase().includes('asma') ? 16000 :
+                    (dbUser.gaji_lembur_per_jam || 14000)
+                  ).toLocaleString('id-ID')}/jam
                 </span>
               </div>
             </div>
@@ -950,10 +987,17 @@ export default function Dashboard() {
                   <span className={`font-mono font-bold ${themeTextVal}`}>Rp {((mySalaryStats.totalRegularHours || 0) * (dbUser.gaji_per_jam || 14000)).toLocaleString('id-ID')}</span>
                 </div>
               )}
-              <div className="flex justify-between items-center">
-                <span className={themeTextLabel}>Upah Lembur ({(mySalaryStats.totalLemburHours || 0).toFixed(1)} jam × Rp {(dbUser.gaji_lembur_per_jam || 14000).toLocaleString('id-ID')})</span>
-                <span className={`font-mono font-bold text-amber-500`}>Rp {((mySalaryStats.totalLemburHours || 0) * (dbUser.gaji_lembur_per_jam || 14000)).toLocaleString('id-ID')}</span>
-              </div>
+              {(() => {
+                const isJunedRender = dbUser.nama?.toLowerCase().includes('juned') || false;
+                const isAsmaRender = dbUser.nama?.toLowerCase().includes('asma') || false;
+                const renderLemburRate = isJunedRender ? 15000 : (isAsmaRender ? 16000 : (dbUser.gaji_lembur_per_jam || 14000));
+                return (
+                  <div className="flex justify-between items-center">
+                    <span className={themeTextLabel}>Upah Lembur ({(mySalaryStats.totalLemburHours || 0).toFixed(1)} jam × Rp {renderLemburRate.toLocaleString('id-ID')})</span>
+                    <span className={`font-mono font-bold text-amber-500`}>Rp {((mySalaryStats.totalLemburHours || 0) * renderLemburRate).toLocaleString('id-ID')}</span>
+                  </div>
+                );
+              })()}
               {dbUser.bonus_dryer_1 && (
                 <div className="flex justify-between items-center">
                   <span className={themeTextLabel}>Bonus Insentif Dryer 1 Aktif</span>
