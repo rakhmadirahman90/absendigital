@@ -195,8 +195,8 @@ export default function ApprovalTab() {
                 const payload = {
                     user_id: matchedUserId,
                     tipe: extracted.tipe || 'izin',
-                    tanggal_mulai: extracted.tanggal_mulai || new Date().toISOString().split('T')[0],
-                    tanggal_akhir: extracted.tanggal_akhir || extracted.tanggal_mulai || new Date().toISOString().split('T')[0],
+                    tanggal_mulai: extracted.tanggal_mulai || format(new Date(), 'yyyy-MM-dd'),
+                    tanggal_akhir: extracted.tanggal_akhir || extracted.tanggal_mulai || format(new Date(), 'yyyy-MM-dd'),
                     alasan: extracted.alasan || 'Pengajuan via AI Dokumen',
                     status: 'approved',
                     catatan_admin: 'Disetujui otomatis oleh AI (Dokumen diunggah Admin)',
@@ -209,7 +209,7 @@ export default function ApprovalTab() {
             } else {
                 const payload = {
                     user_id: matchedUserId,
-                    tanggal: extracted.tanggal || new Date().toISOString().split('T')[0],
+                    tanggal: extracted.tanggal || format(new Date(), 'yyyy-MM-dd'),
                     durasi_jam: Number(extracted.durasi_jam || 2),
                     keterangan: extracted.keterangan || 'Overtime via AI Dokumen',
                     status: 'approved',

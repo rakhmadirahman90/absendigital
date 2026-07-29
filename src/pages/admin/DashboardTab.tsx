@@ -5,6 +5,7 @@ import { Users, CheckCircle, Clock, Download, BarChart2, AlertCircle, Eye, Calen
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import { format } from 'date-fns';
 
 export default function DashboardTab() {
   const [stats, setStats] = useState<any>({
@@ -23,14 +24,21 @@ export default function DashboardTab() {
   const [waLogsCount, setWaLogsCount] = useState(0);
 
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = format(new Date(), 'yyyy-MM-dd');
     setLoading(true);
 
     // 1. Fetch Users map and total employees
     const unsubUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
       const map: Record<string, any> = {};
       usersSnap.forEach(doc => {
-        map[doc.id] = { id: doc.id, ...doc.data() };
+        const data = doc.data();
+        const userData = { id: doc.id, ...data };
+        map[doc.id] = userData;
+        if (data.id) map[data.id] = userData;
+        if (data.waNumber) {
+          map[data.waNumber] = userData;
+          map[`wa-${data.waNumber}`] = userData;
+        }
       });
       setUsersMap(map);
       
@@ -131,7 +139,7 @@ export default function DashboardTab() {
         d.setDate(monday.getDate() + i);
         weekDates.push({
           name: dayNames[i],
-          dateStr: d.toISOString().split('T')[0]
+          dateStr: format(d, 'yyyy-MM-dd')
         });
       }
 
@@ -206,7 +214,7 @@ export default function DashboardTab() {
       const url = window.URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `rekap_absensi_${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute('download', `rekap_absensi_${format(new Date(), 'yyyy-MM-dd')}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

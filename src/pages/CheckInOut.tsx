@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import RealTimeClock from '../components/RealTimeClock';
 import { createNotification } from '../lib/notifications';
+import { format } from 'date-fns';
 
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371e3; // Radius of the earth in m
@@ -356,8 +357,8 @@ export default function CheckInOut() {
       }
 
       const today = new Date();
-      const dateStr = today.toISOString().split('T')[0];
-      const timeStr = today.toTimeString().split(' ')[0];
+      const dateStr = format(today, 'yyyy-MM-dd');
+      const timeStr = format(today, 'HH:mm:ss');
       const timestampLabel = `${dateStr} ${timeStr}`;
 
       setMessage('Mendeteksi nama lokasi berdasarkan GPS...');
@@ -542,6 +543,8 @@ export default function CheckInOut() {
 
         await addDoc(attendanceRef, {
           user_id: user.uid,
+          nama: user.nama || user.displayName || user.email || 'Karyawan',
+          divisi: user.divisi || '',
           tanggal: dateStr,
           jam_masuk: timeStr,
           latitude_masuk: latitude,

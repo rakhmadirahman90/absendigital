@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { format } from 'date-fns';
 import { db } from '../../lib/firebase';
 import { 
   doc, 
@@ -508,7 +509,7 @@ export default function PengaturanTab() {
     const toastId = toast.loading(`Menjalankan simulasi pengingat WA harian (${displayHour})...`);
 
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
       
       // 1. Fetch Today's Attendance
       const attSnap = await getDocs(query(collection(db, 'attendance'), where('tanggal', '==', todayStr)));

@@ -10,7 +10,7 @@ import { toast } from 'react-hot-toast';
 export default function AbsensiTab() {
     const [attendance, setAttendance] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+    const [filterDate, setFilterDate] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [filterDivisi, setFilterDivisi] = useState('');
     const [usersMap, setUsersMap] = useState<Record<string, any>>({});
     const [divisiList, setDivisiList] = useState<string[]>([]);
@@ -102,10 +102,10 @@ export default function AbsensiTab() {
     const [reportStartDate, setReportStartDate] = useState(() => {
         const d = new Date();
         d.setDate(d.getDate() - 7);
-        return d.toISOString().split('T')[0];
+        return format(d, 'yyyy-MM-dd');
     });
     const [reportEndDate, setReportEndDate] = useState(() => {
-        return new Date().toISOString().split('T')[0];
+        return format(new Date(), 'yyyy-MM-dd');
     });
     const [isGeneratingReport, setIsGeneratingReport] = useState(false);
     const [generatedReport, setGeneratedReport] = useState<any>(null);
@@ -116,12 +116,12 @@ export default function AbsensiTab() {
         const start = new Date();
         if (preset === 'weekly') {
             start.setDate(end.getDate() - 7);
-            setReportStartDate(start.toISOString().split('T')[0]);
-            setReportEndDate(end.toISOString().split('T')[0]);
+            setReportStartDate(format(start, 'yyyy-MM-dd'));
+            setReportEndDate(format(end, 'yyyy-MM-dd'));
         } else if (preset === 'monthly') {
             start.setDate(end.getDate() - 30);
-            setReportStartDate(start.toISOString().split('T')[0]);
-            setReportEndDate(end.toISOString().split('T')[0]);
+            setReportStartDate(format(start, 'yyyy-MM-dd'));
+            setReportEndDate(format(end, 'yyyy-MM-dd'));
         }
     };
 
@@ -318,7 +318,13 @@ export default function AbsensiTab() {
             const divisiSet = new Set<string>();
             snap.forEach(doc => {
                 const data = doc.data();
-                map[doc.id] = data;
+                const userData = { id: doc.id, ...data };
+                map[doc.id] = userData;
+                if (data.id) map[data.id] = userData;
+                if (data.waNumber) {
+                    map[data.waNumber] = userData;
+                    map[`wa-${data.waNumber}`] = userData;
+                }
                 if (data.divisi) divisiSet.add(data.divisi);
             });
             setUsersMap(map);
@@ -330,8 +336,6 @@ export default function AbsensiTab() {
     }, []);
 
     useEffect(() => {
-        if (Object.keys(usersMap).length === 0) return;
-        
         setLoading(true);
         let q = query(collection(db, 'attendance'), where('tanggal', '==', filterDate));
         
@@ -347,7 +351,7 @@ export default function AbsensiTab() {
             setAttendance(data);
             setLoading(false);
         }, (error) => {
-            console.error(error);
+            console.error("Error listening to attendance:", error);
             setLoading(false);
         });
 
@@ -355,7 +359,6 @@ export default function AbsensiTab() {
     }, [filterDate, filterDivisi, usersMap]);
 
     useEffect(() => {
-        if (Object.keys(usersMap).length === 0) return;
         if (activeSubTab !== 'bulanan' && activeSubTab !== 'gaji') return;
 
         setMonthlyLoading(true);
@@ -1892,12 +1895,12 @@ export default function AbsensiTab() {
                                     return (
                                         <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                                             <td className="p-4">
-                                                <div className="font-semibold text-slate-800 text-sm">{user.nama || 'Tidak Dikenal'}</div>
+                                                <div className="font-semibold text-slate-800 text-sm">{user.nama || item.nama || 'Karyawan'}</div>
                                                 <div className="text-[10px] text-slate-400 mt-0.5">UID: {item.user_id?.substring(0, 8)}...</div>
                                             </td>
                                             <td className="p-4 text-sm">
                                                 <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg text-xs font-medium">
-                                                    {user.divisi || '-'}
+                                                    {user.divisi || item.divisi || '-'}
                                                 </span>
                                             </td>
                                             <td className="p-4 text-sm font-mono font-medium text-slate-600">
@@ -2038,7 +2041,7 @@ export default function AbsensiTab() {
                                 <div key={item.id} className="p-4 flex flex-col space-y-3 hover:bg-slate-50/50 transition-all">
                                     <div className="flex justify-between items-start">
                                         <div>
-                                            <h4 className="font-bold text-slate-800 text-sm">{user.nama || 'Tidak Dikenal'}</h4>
+                                            <h4 className="font-bold text-slate-800 text-sm">{user.nama || item.nama || 'Karyawan'}</h4>
                                             <span className="text-[10px] text-slate-400">UID: {item.user_id?.substring(0, 10)}</span>
                                         </div>
                                         <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${getStatusStyles(item.status || 'Hadir')}`}>

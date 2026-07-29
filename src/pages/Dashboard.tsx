@@ -21,7 +21,7 @@ function getWeekDates() {
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    const dateString = d.toISOString().split('T')[0];
+    const dateString = format(d, 'yyyy-MM-dd');
     dates.push({
       dayName: daysName[i],
       dateString
