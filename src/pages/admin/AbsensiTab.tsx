@@ -11,6 +11,7 @@ export default function AbsensiTab() {
     const [attendance, setAttendance] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [filterDate, setFilterDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [filterDateMode, setFilterDateMode] = useState<'single' | 'all'>('single');
     const [filterDivisi, setFilterDivisi] = useState('');
     const [usersMap, setUsersMap] = useState<Record<string, any>>({});
     const [divisiList, setDivisiList] = useState<string[]>([]);
@@ -19,6 +20,22 @@ export default function AbsensiTab() {
     // Additional filters for interactive UX
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Hadir' | 'Terlambat' | 'absen'>('all');
+
+    const getUserFromRecord = (item: any, uMap: Record<string, any> = usersMap) => {
+        if (!item) return { nama: 'Karyawan', divisi: '-' };
+        const u = (item.user_id && uMap[item.user_id]) ||
+                  (item.user_id && uMap[item.user_id.toLowerCase()]) ||
+                  (item.user_id && uMap[item.user_id.replace(/\D/g, '')]) ||
+                  (item.nama && uMap[item.nama.toLowerCase().trim()]) ||
+                  {};
+        return {
+            nama: u.nama || item.nama || 'Karyawan',
+            divisi: u.divisi || item.divisi || '-',
+            waNumber: u.waNumber || item.waNumber || '',
+            role: u.role || 'karyawan',
+            ...u
+        };
+    };
     
     // Subtab states for Monthly AI reports
     const [activeSubTab, setActiveSubTab] = useState<'harian' | 'bulanan' | 'gaji'>('harian');
@@ -321,9 +338,29 @@ export default function AbsensiTab() {
                 const userData = { id: doc.id, ...data };
                 map[doc.id] = userData;
                 if (data.id) map[data.id] = userData;
+                if (data.uid) map[data.uid] = userData;
+                if (data.user_id) map[data.user_id] = userData;
                 if (data.waNumber) {
-                    map[data.waNumber] = userData;
-                    map[`wa-${data.waNumber}`] = userData;
+                    const rawWa = String(data.waNumber);
+                    const cleanWa = rawWa.replace(/\D/g, '');
+                    map[rawWa] = userData;
+                    map[`wa-${rawWa}`] = userData;
+                    if (cleanWa) {
+                        map[cleanWa] = userData;
+                        map[`wa-${cleanWa}`] = userData;
+                        if (cleanWa.startsWith('62')) {
+                            const wa08 = '0' + cleanWa.slice(2);
+                            map[wa08] = userData;
+                            map[`wa-${wa08}`] = userData;
+                        } else if (cleanWa.startsWith('0')) {
+                            const wa62 = '62' + cleanWa.slice(1);
+                            map[wa62] = userData;
+                            map[`wa-${wa62}`] = userData;
+                        }
+                    }
+                }
+                if (data.nama) {
+                    map[data.nama.toLowerCase().trim()] = userData;
                 }
                 if (data.divisi) divisiSet.add(data.divisi);
             });
@@ -337,15 +374,30 @@ export default function AbsensiTab() {
 
     useEffect(() => {
         setLoading(true);
-        let q = query(collection(db, 'attendance'), where('tanggal', '==', filterDate));
+        let q;
+        if (filterDateMode === 'all') {
+            q = query(collection(db, 'attendance'));
+        } else {
+            q = query(collection(db, 'attendance'), where('tanggal', '==', filterDate));
+        }
         
         const unsubAttendance = onSnapshot(q, (snap) => {
             let data: any[] = [];
             snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
 
+            // Sort by date desc, then jam_masuk desc
+            data.sort((a, b) => {
+                const dateComp = (b.tanggal || '').localeCompare(a.tanggal || '');
+                if (dateComp !== 0) return dateComp;
+                return (b.jam_masuk || '').localeCompare(a.jam_masuk || '');
+            });
+
             // Client side filter for divisi
             if (filterDivisi) {
-                data = data.filter(item => usersMap[item.user_id]?.divisi === filterDivisi);
+                data = data.filter(item => {
+                    const user = getUserFromRecord(item, usersMap);
+                    return user.divisi === filterDivisi || item.divisi === filterDivisi;
+                });
             }
             
             setAttendance(data);
@@ -356,7 +408,7 @@ export default function AbsensiTab() {
         });
 
         return () => unsubAttendance();
-    }, [filterDate, filterDivisi, usersMap]);
+    }, [filterDate, filterDateMode, filterDivisi, usersMap]);
 
     useEffect(() => {
         if (activeSubTab !== 'bulanan' && activeSubTab !== 'gaji') return;
@@ -793,11 +845,11 @@ export default function AbsensiTab() {
         }
         const headers = ['No', 'Nama Karyawan', 'Divisi', 'Jam Masuk', 'Jam Pulang', 'Status', 'Alamat Masuk', 'Latitude', 'Longitude'];
         const rows = displayedAttendance.map((item, idx) => {
-            const u = usersMap[item.user_id] || {};
+            const u = getUserFromRecord(item, usersMap);
             return [
                 idx + 1,
-                `"${(u.nama || 'Tidak Dikenal').replace(/"/g, '""')}"`,
-                `"${(u.divisi || '-').replace(/"/g, '""')}"`,
+                `"${(u.nama || item.nama || 'Karyawan').replace(/"/g, '""')}"`,
+                `"${(u.divisi || item.divisi || '-').replace(/"/g, '""')}"`,
                 item.jam_masuk || '-',
                 item.jam_pulang || '-',
                 item.status || 'Hadir',
@@ -832,8 +884,8 @@ export default function AbsensiTab() {
 
     // Filter displayed list
     const displayedAttendance = attendance.filter(item => {
-        const user = usersMap[item.user_id] || {};
-        const employeeName = (user.nama || '').toLowerCase();
+        const user = getUserFromRecord(item, usersMap);
+        const employeeName = (user.nama || item.nama || '').toLowerCase();
         const matchesSearch = employeeName.includes(searchQuery.toLowerCase());
         
         if (!matchesSearch) return false;
@@ -1768,13 +1820,73 @@ export default function AbsensiTab() {
 
                     {/* Date Selector */}
                     <div>
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tanggal Absensi</label>
-                        <input 
-                            type="date" 
-                            value={filterDate} 
-                            onChange={e => setFilterDate(e.target.value)} 
-                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700" 
-                        />
+                        <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Tanggal Absensi</label>
+                            <div className="flex items-center gap-1 text-[11px]">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFilterDate(format(new Date(), 'yyyy-MM-dd'));
+                                        setFilterDateMode('single');
+                                    }}
+                                    className={`px-2 py-0.5 rounded-md text-xs transition-colors ${
+                                        filterDateMode === 'single' && filterDate === format(new Date(), 'yyyy-MM-dd')
+                                            ? 'bg-blue-600 text-white font-medium'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    Hari Ini
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const y = new Date();
+                                        y.setDate(y.getDate() - 1);
+                                        setFilterDate(format(y, 'yyyy-MM-dd'));
+                                        setFilterDateMode('single');
+                                    }}
+                                    className={`px-2 py-0.5 rounded-md text-xs transition-colors ${
+                                        filterDateMode === 'single' && filterDate === format(new Date(Date.now() - 86400000), 'yyyy-MM-dd')
+                                            ? 'bg-blue-600 text-white font-medium'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    Kemarin
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setFilterDateMode('all')}
+                                    className={`px-2 py-0.5 rounded-md text-xs transition-colors ${
+                                        filterDateMode === 'all'
+                                            ? 'bg-blue-600 text-white font-medium'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    Semua Tanggal
+                                </button>
+                            </div>
+                        </div>
+                        {filterDateMode === 'all' ? (
+                            <div className="w-full px-4 py-2 bg-blue-50 border border-blue-200 rounded-xl text-sm font-semibold text-blue-700 flex items-center justify-between">
+                                <span>Menampilkan Semua Tanggal Presensi</span>
+                                <button 
+                                    onClick={() => setFilterDateMode('single')} 
+                                    className="text-xs text-blue-600 underline font-normal hover:text-blue-800"
+                                >
+                                    Pilih Tanggal Spesifik
+                                </button>
+                            </div>
+                        ) : (
+                            <input 
+                                type="date" 
+                                value={filterDate} 
+                                onChange={e => {
+                                    setFilterDate(e.target.value);
+                                    setFilterDateMode('single');
+                                }} 
+                                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm text-slate-700" 
+                            />
+                        )}
                     </div>
 
                     {/* Division Selector */}

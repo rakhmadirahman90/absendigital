@@ -23,6 +23,20 @@ export default function DashboardTab() {
   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
   const [waLogsCount, setWaLogsCount] = useState(0);
 
+  const getUserFromRecord = (log: any) => {
+    if (!log) return { nama: 'Karyawan', divisi: '-' };
+    const u = (log.user_id && usersMap[log.user_id]) ||
+              (log.user_id && usersMap[log.user_id.toLowerCase()]) ||
+              (log.user_id && usersMap[log.user_id.replace(/\D/g, '')]) ||
+              (log.nama && usersMap[log.nama.toLowerCase().trim()]) ||
+              {};
+    return {
+      nama: u.nama || log.nama || 'Karyawan',
+      divisi: u.divisi || log.divisi || '-',
+      ...u
+    };
+  };
+
   useEffect(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
     setLoading(true);
@@ -35,9 +49,29 @@ export default function DashboardTab() {
         const userData = { id: doc.id, ...data };
         map[doc.id] = userData;
         if (data.id) map[data.id] = userData;
+        if (data.uid) map[data.uid] = userData;
+        if (data.user_id) map[data.user_id] = userData;
         if (data.waNumber) {
-          map[data.waNumber] = userData;
-          map[`wa-${data.waNumber}`] = userData;
+          const rawWa = String(data.waNumber);
+          const cleanWa = rawWa.replace(/\D/g, '');
+          map[rawWa] = userData;
+          map[`wa-${rawWa}`] = userData;
+          if (cleanWa) {
+            map[cleanWa] = userData;
+            map[`wa-${cleanWa}`] = userData;
+            if (cleanWa.startsWith('62')) {
+              const wa08 = '0' + cleanWa.slice(2);
+              map[wa08] = userData;
+              map[`wa-${wa08}`] = userData;
+            } else if (cleanWa.startsWith('0')) {
+              const wa62 = '62' + cleanWa.slice(1);
+              map[wa62] = userData;
+              map[`wa-${wa62}`] = userData;
+            }
+          }
+        }
+        if (data.nama) {
+          map[data.nama.toLowerCase().trim()] = userData;
         }
       });
       setUsersMap(map);
@@ -478,7 +512,7 @@ export default function DashboardTab() {
               </div>
             ) : (
               recentAttendance.map(log => {
-                const user = usersMap[log.user_id] || {};
+                const user = getUserFromRecord(log);
                 const isLate = log.status === 'Terlambat';
                 return (
                   <div key={log.id} className="py-3.5 flex items-center justify-between hover:bg-slate-50/50 transition-colors rounded-xl px-2">
@@ -498,7 +532,7 @@ export default function DashboardTab() {
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-slate-700 truncate">{user.nama || 'Tidak Dikenal'}</p>
+                        <p className="text-sm font-bold text-slate-700 truncate">{user.nama || 'Karyawan'}</p>
                         <p className="text-[10px] text-slate-400 truncate">{user.divisi || '-'} • {log.alamat_masuk ? log.alamat_masuk.split(',')[0] : 'Lokasi Terdaftar'}</p>
                       </div>
                     </div>
