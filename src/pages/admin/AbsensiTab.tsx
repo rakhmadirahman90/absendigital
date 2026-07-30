@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { db } from '../../lib/firebase';
+import { calculateAutoBreakHours } from '../../lib/utils';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
-import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter, Printer, Download, Sparkles } from 'lucide-react';
+import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter, Printer, Download, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -66,6 +67,21 @@ export default function AbsensiTab() {
     const [payrollSearch, setPayrollSearch] = useState('');
     const [selectedEmpPayrollDetail, setSelectedEmpPayrollDetail] = useState<any>(null);
     const [time, setTime] = useState(new Date());
+
+    // Pagination states
+    const [pageHarian, setPageHarian] = useState(1);
+    const [limitHarian, setLimitHarian] = useState(10);
+    const [pageGaji, setPageGaji] = useState(1);
+    const [limitGaji, setLimitGaji] = useState(10);
+
+    // Reset pagination on filter changes
+    useEffect(() => {
+        setPageHarian(1);
+    }, [filterDate, filterDateMode, filterDivisi, searchQuery, statusFilter]);
+
+    useEffect(() => {
+        setPageGaji(1);
+    }, [selectedMonth, selectedMonthDivisi, payrollSearch]);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -759,7 +775,7 @@ export default function AbsensiTab() {
             jam_masuk: item.jam_masuk || '',
             jam_pulang: item.jam_pulang || '',
             status: item.status || 'Hadir',
-            istirahat: item.istirahat !== undefined && item.istirahat !== null ? Number(item.istirahat) : 1,
+            istirahat: calculateAutoBreakHours(item.jam_masuk, item.jam_pulang, item.istirahat),
             is_lembur: !!item.is_lembur,
             dryer_menyala: !!item.dryer_menyala
         });
@@ -899,12 +915,23 @@ export default function AbsensiTab() {
     });
 
     const getPayrollData = () => {
-        const employees = Object.entries(usersMap)
-            .filter(([id, u]: [string, any]) => u.role !== 'admin')
-            .map(([id, u]: [string, any]) => ({ id, ...(u as any) }));
+        // Collect unique employee objects keyed by user ID / document ID
+        const employeeMap = new Map<string, any>();
+        Object.values(usersMap).forEach((u: any) => {
+            if (u && u.role !== 'admin') {
+                const uniqueId = u.id || u.waNumber || u.nama;
+                if (uniqueId && !employeeMap.has(uniqueId)) {
+                    employeeMap.set(uniqueId, u);
+                }
+            }
+        });
+        const employees = Array.from(employeeMap.values());
 
         const results = employees.map(emp => {
-            const empRecords = monthlyRecords.filter(r => r.user_id === emp.id);
+            const empRecords = monthlyRecords.filter(r => {
+                const user = getUserFromRecord(r, usersMap);
+                return user?.id === emp.id || r.user_id === emp.id || r.user_id === emp.waNumber;
+            });
             let totalRegularHours = 0;
             let totalLemburHours = 0;
             let totalDryerBonus = 0;
@@ -967,7 +994,7 @@ export default function AbsensiTab() {
                     outTime = Number(outVal) || 0;
                 }
 
-                const breakHours = rec.istirahat !== undefined ? Number(rec.istirahat) : 1;
+                const breakHours = calculateAutoBreakHours(inVal, outVal, rec.istirahat);
                 const rawHours = Math.max(0, outTime - inTime);
                 const netHours = Math.max(0, rawHours - breakHours);
 
@@ -1095,6 +1122,116 @@ export default function AbsensiTab() {
                 item.employee.jabatan?.toLowerCase().includes(payrollSearch.toLowerCase());
             return matchesDivisi && matchesSearch;
         });
+    };
+
+    const renderPaginationBar = (
+        currentPage: number,
+        totalPages: number,
+        totalItems: number,
+        limit: number,
+        onPageChange: (p: number) => void,
+        onLimitChange: (l: number) => void,
+        itemLabel: string = "Data"
+    ) => {
+        if (totalItems === 0) return null;
+
+        const startItem = (currentPage - 1) * limit + 1;
+        const endItem = Math.min(currentPage * limit, totalItems);
+
+        const getPageNumbers = () => {
+            const pages: (number | string)[] = [];
+            if (totalPages <= 5) {
+                for (let i = 1; i <= totalPages; i++) pages.push(i);
+            } else {
+                pages.push(1);
+                if (currentPage > 3) pages.push('...');
+                
+                const start = Math.max(2, currentPage - 1);
+                const end = Math.min(totalPages - 1, currentPage + 1);
+                
+                for (let i = start; i <= end; i++) {
+                    if (!pages.includes(i)) pages.push(i);
+                }
+                
+                if (currentPage < totalPages - 2) pages.push('...');
+                if (!pages.includes(totalPages)) pages.push(totalPages);
+            }
+            return pages;
+        };
+
+        return (
+            <div className="bg-slate-50 border-t border-slate-200 px-4 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-sans">
+                <div className="flex flex-wrap items-center justify-between sm:justify-start w-full sm:w-auto gap-3 text-slate-500 font-medium">
+                    <div>
+                        Menampilkan <span className="font-bold text-slate-800">{startItem}</span> - <span className="font-bold text-slate-800">{endItem}</span> dari <span className="font-bold text-slate-800">{totalItems}</span> {itemLabel}
+                    </div>
+                    <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+                        <span className="text-[11px] text-slate-400">Baris:</span>
+                        <select
+                            value={limit}
+                            onChange={(e) => {
+                                onLimitChange(Number(e.target.value));
+                                onPageChange(1);
+                            }}
+                            className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-bold outline-none focus:ring-2 focus:ring-blue-500/20 text-xs shadow-xs cursor-pointer"
+                        >
+                            <option value={5}>5</option>
+                            <option value={10}>10</option>
+                            <option value={25}>25</option>
+                            <option value={50}>50</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-center gap-1.5 w-full sm:w-auto">
+                    <button
+                        onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1}
+                        className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-semibold flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer"
+                        title="Halaman Sebelumnya"
+                    >
+                        <ChevronLeft size={15} />
+                        <span className="hidden sm:inline text-xs">Sebelumnya</span>
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                        {getPageNumbers().map((p, idx) => {
+                            if (typeof p === 'string') {
+                                return (
+                                    <span key={idx} className="px-1.5 text-slate-400 text-xs font-bold">
+                                        ...
+                                    </span>
+                                );
+                            }
+                            const isCurrent = p === currentPage;
+                            return (
+                                <button
+                                    key={idx}
+                                    onClick={() => onPageChange(p)}
+                                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-all flex items-center justify-center cursor-pointer ${
+                                        isCurrent
+                                            ? 'bg-blue-600 text-white shadow-sm scale-105 font-black'
+                                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                                    }`}
+                                >
+                                    {p}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <button
+                        onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage >= totalPages}
+                        className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-semibold flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer"
+                        title="Halaman Selanjutnya"
+                    >
+                        <span className="hidden sm:inline text-xs">Selanjutnya</span>
+                        <ChevronRight size={15} />
+                    </button>
+                </div>
+            </div>
+        );
     };
 
     const handleDownloadAllPayrollCSV = () => {
@@ -1983,7 +2120,9 @@ export default function AbsensiTab() {
                                     </td>
                                 </tr>
                             ) : (
-                                displayedAttendance.map(item => {
+                                displayedAttendance
+                                    .slice((pageHarian - 1) * limitHarian, pageHarian * limitHarian)
+                                    .map(item => {
                                     const user = usersMap[item.user_id] || {};
                                     
                                     // Beautiful status colors
@@ -2129,7 +2268,9 @@ export default function AbsensiTab() {
                             </div>
                         </div>
                     ) : (
-                        displayedAttendance.map(item => {
+                        displayedAttendance
+                            .slice((pageHarian - 1) * limitHarian, pageHarian * limitHarian)
+                            .map(item => {
                             const user = usersMap[item.user_id] || {};
                             
                             const getStatusStyles = (status: string) => {
@@ -2214,6 +2355,17 @@ export default function AbsensiTab() {
                         })
                     )}
                 </div>
+
+                {/* Pagination Footer */}
+                {renderPaginationBar(
+                    pageHarian,
+                    Math.ceil(displayedAttendance.length / limitHarian) || 1,
+                    displayedAttendance.length,
+                    limitHarian,
+                    setPageHarian,
+                    setLimitHarian,
+                    "Presensi"
+                )}
             </div>
             </>
             ) : activeSubTab === 'bulanan' ? (
@@ -2515,141 +2667,263 @@ export default function AbsensiTab() {
                             </div>
                         </div>
                     ) : (
-                        <>
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Pengeluaran Gaji</span>
-                                    <span className="text-xl font-black text-slate-800">
-                                        Rp {getPayrollData().reduce((acc, curr) => acc + curr.grandTotalSalary, 0).toLocaleString('id-ID')}
-                                    </span>
-                                </div>
-                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Jam Kerja Biasa</span>
-                                    <span className="text-xl font-black text-slate-800">
-                                        {getPayrollData().reduce((acc, curr) => acc + curr.totalRegularHours, 0).toFixed(1)} Jam
-                                    </span>
-                                </div>
-                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Jam Lembur</span>
-                                    <span className="text-xl font-black text-slate-800">
-                                        {getPayrollData().reduce((acc, curr) => acc + curr.totalLemburHours, 0).toFixed(1)} Jam
-                                    </span>
-                                </div>
-                                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Bonus Dryer 1</span>
-                                    <span className="text-xl font-black text-slate-800">
-                                        Rp {getPayrollData().reduce((acc, curr) => acc + curr.totalDryerBonus, 0).toLocaleString('id-ID')}
-                                    </span>
-                                </div>
-                            </div>
+                        (() => {
+                            const allPayrollData = getPayrollData();
+                            const totalPagesGaji = Math.ceil(allPayrollData.length / limitGaji) || 1;
+                            const paginatedPayrollData = allPayrollData.slice((pageGaji - 1) * limitGaji, pageGaji * limitGaji);
 
-                            {/* Main Payroll Table Card */}
-                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                                    <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Daftar Gaji Karyawan ({getPayrollData().length})</span>
-                                </div>
+                            return (
+                                <>
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Pengeluaran Gaji</span>
+                                            <span className="text-xl font-black text-slate-800">
+                                                Rp {allPayrollData.reduce((acc, curr) => acc + curr.grandTotalSalary, 0).toLocaleString('id-ID')}
+                                            </span>
+                                        </div>
+                                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Jam Kerja Biasa</span>
+                                            <span className="text-xl font-black text-slate-800">
+                                                {allPayrollData.reduce((acc, curr) => acc + curr.totalRegularHours, 0).toFixed(1)} Jam
+                                            </span>
+                                        </div>
+                                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Jam Lembur</span>
+                                            <span className="text-xl font-black text-slate-800">
+                                                {allPayrollData.reduce((acc, curr) => acc + curr.totalLemburHours, 0).toFixed(1)} Jam
+                                            </span>
+                                        </div>
+                                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Total Bonus Dryer 1</span>
+                                            <span className="text-xl font-black text-slate-800">
+                                                Rp {allPayrollData.reduce((acc, curr) => acc + curr.totalDryerBonus, 0).toLocaleString('id-ID')}
+                                            </span>
+                                        </div>
+                                    </div>
 
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-xs border-collapse">
-                                        <thead>
-                                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
-                                                <th className="p-4">Karyawan</th>
-                                                <th className="p-4">Sistem Kerja</th>
-                                                <th className="p-4 text-center">Kehadiran</th>
-                                                <th className="p-4 text-center">Regular (Jam)</th>
-                                                <th className="p-4 text-center">Lembur (Jam)</th>
-                                                <th className="p-4 text-right">Estimasi Gaji Bersih</th>
-                                                <th className="p-4 text-center">Aksi</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                                            {getPayrollData().length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={7} className="p-12 text-center text-slate-400 font-medium">Tidak ada karyawan yang sesuai dengan saringan.</td>
-                                                </tr>
+                                    {/* Main Payroll Table Card */}
+                                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                                        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                                            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Daftar Gaji Karyawan ({allPayrollData.length})</span>
+                                        </div>
+
+                                        {/* Desktop Table View */}
+                                        <div className="hidden md:block overflow-x-auto">
+                                            <table className="w-full text-left text-xs border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+                                                        <th className="p-4">Karyawan</th>
+                                                        <th className="p-4">Sistem Kerja</th>
+                                                        <th className="p-4 text-center">Kehadiran</th>
+                                                        <th className="p-4 text-center">Regular (Jam)</th>
+                                                        <th className="p-4 text-center">Lembur (Jam)</th>
+                                                        <th className="p-4 text-right">Estimasi Gaji Bersih</th>
+                                                        <th className="p-4 text-center">Aksi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                    {allPayrollData.length === 0 ? (
+                                                        <tr>
+                                                            <td colSpan={7} className="p-12 text-center text-slate-400 font-medium">Tidak ada karyawan yang sesuai dengan saringan.</td>
+                                                        </tr>
+                                                    ) : (
+                                                        paginatedPayrollData.map((payroll, idx) => (
+                                                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="p-4">
+                                                                    <div>
+                                                                        <span className="font-bold text-slate-800 block">{payroll.employee.nama}</span>
+                                                                        <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block mt-0.5">
+                                                                            {payroll.employee.jabatan || 'Karyawan'} • {payroll.employee.divisi || '-'}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="p-4">
+                                                                    {payroll.employee.gaji_type === 'per_bulan' ? (
+                                                                        <div>
+                                                                            <span className="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-100 font-bold rounded-full text-[10px] uppercase">Bulanan</span>
+                                                                            <span className="text-[10px] text-slate-400 block mt-1">Rp {(payroll.employee.gaji_bulanan || 0).toLocaleString('id-ID')}/bln</span>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div>
+                                                                            <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-100 font-bold rounded-full text-[10px] uppercase">Per Jam</span>
+                                                                            <span className="text-[10px] text-slate-400 block mt-1">Rp {(payroll.employee.gaji_per_jam || 14000).toLocaleString('id-ID')}/jam</span>
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                                <td className="p-4 text-center font-bold text-slate-700">{payroll.daysPresent} Hari</td>
+                                                                <td className="p-4 text-center font-semibold text-slate-600">{payroll.totalRegularHours.toFixed(1)}</td>
+                                                                <td className="p-4 text-center font-semibold text-slate-600">{payroll.totalLemburHours.toFixed(1)}</td>
+                                                                <td className="p-4 text-right">
+                                                                    <span className="font-black text-slate-900 text-sm block">Rp {payroll.grandTotalSalary.toLocaleString('id-ID')}</span>
+                                                                    <div className="flex flex-col items-end gap-0.5 mt-1">
+                                                                        {payroll.status === 'paid' ? (
+                                                                            <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 font-extrabold rounded-full text-[9px] uppercase">Dibayar</span>
+                                                                        ) : payroll.status === 'approved' ? (
+                                                                            <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 font-extrabold rounded-full text-[9px] uppercase">Disetujui</span>
+                                                                        ) : (
+                                                                            <span className="px-1.5 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 font-extrabold rounded-full text-[9px] uppercase">Draft</span>
+                                                                        )}
+                                                                        {payroll.totalTunjangan > 0 && (
+                                                                            <span className="text-[9px] font-bold text-emerald-600 block">+Rp {payroll.totalTunjangan.toLocaleString('id-ID')}</span>
+                                                                        )}
+                                                                        {payroll.totalPotongan > 0 && (
+                                                                            <span className="text-[9px] font-bold text-rose-600 block">-Rp {payroll.totalPotongan.toLocaleString('id-ID')}</span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="p-4 text-center">
+                                                                    <div className="flex justify-center items-center gap-1.5 flex-wrap">
+                                                                        <button
+                                                                            onClick={() => setSelectedEmpPayrollDetail(payroll)}
+                                                                            className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                                                        >
+                                                                            Rincian
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handlePrintSingleSlip(payroll)}
+                                                                            className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                                                        >
+                                                                            Cetak Slip
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleEditPayroll(payroll)}
+                                                                            className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-lg transition-colors cursor-pointer"
+                                                                            title="Edit Gaji Karyawan"
+                                                                        >
+                                                                            <Edit2 size={13} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDeletePayroll(payroll)}
+                                                                            className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg transition-colors cursor-pointer"
+                                                                            title="Hapus / Reset Gaji"
+                                                                        >
+                                                                            <Trash2 size={13} />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        {/* Mobile & Tablet Card View for Payroll */}
+                                        <div className="block md:hidden divide-y divide-slate-100">
+                                            {allPayrollData.length === 0 ? (
+                                                <div className="p-8 text-center text-slate-400 font-medium text-xs">
+                                                    Tidak ada karyawan yang sesuai dengan saringan.
+                                                </div>
                                             ) : (
-                                                getPayrollData().map((payroll, idx) => (
-                                                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="p-4">
+                                                paginatedPayrollData.map((payroll, idx) => (
+                                                    <div key={idx} className="p-4 space-y-3 hover:bg-slate-50/60 transition-colors">
+                                                        <div className="flex justify-between items-start gap-2">
                                                             <div>
-                                                                <span className="font-bold text-slate-800 block">{payroll.employee.nama}</span>
-                                                                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block mt-0.5">
+                                                                <span className="font-bold text-slate-800 text-sm block">{payroll.employee.nama}</span>
+                                                                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block mt-0.5">
                                                                     {payroll.employee.jabatan || 'Karyawan'} • {payroll.employee.divisi || '-'}
                                                                 </span>
                                                             </div>
-                                                        </td>
-                                                        <td className="p-4">
                                                             {payroll.employee.gaji_type === 'per_bulan' ? (
-                                                                <div>
-                                                                    <span className="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-100 font-bold rounded-full text-[10px] uppercase">Bulanan</span>
-                                                                    <span className="text-[10px] text-slate-400 block mt-1">Rp {(payroll.employee.gaji_bulanan || 0).toLocaleString('id-ID')}/bln</span>
-                                                                </div>
+                                                                <span className="px-2.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-100 font-bold rounded-full text-[10px] uppercase shrink-0">Bulanan</span>
                                                             ) : (
-                                                                <div>
-                                                                    <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-100 font-bold rounded-full text-[10px] uppercase">Per Jam</span>
-                                                                    <span className="text-[10px] text-slate-400 block mt-1">Rp {(payroll.employee.gaji_per_jam || 14000).toLocaleString('id-ID')}/jam</span>
-                                                                </div>
+                                                                <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 font-bold rounded-full text-[10px] uppercase shrink-0">Per Jam</span>
                                                             )}
-                                                        </td>
-                                                        <td className="p-4 text-center font-bold text-slate-700">{payroll.daysPresent} Hari</td>
-                                                        <td className="p-4 text-center font-semibold text-slate-600">{payroll.totalRegularHours.toFixed(1)}</td>
-                                                        <td className="p-4 text-center font-semibold text-slate-600">{payroll.totalLemburHours.toFixed(1)}</td>
-                                                        <td className="p-4 text-right">
-                                                            <span className="font-black text-slate-900 text-sm block">Rp {payroll.grandTotalSalary.toLocaleString('id-ID')}</span>
-                                                            <div className="flex flex-col items-end gap-0.5 mt-1">
+                                                        </div>
+
+                                                        <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center text-xs">
+                                                            <div>
+                                                                <span className="text-[9px] text-slate-400 block font-bold uppercase tracking-wider">Hadir</span>
+                                                                <span className="font-extrabold text-slate-700 mt-0.5 block">{payroll.daysPresent} Hari</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-[9px] text-slate-400 block font-bold uppercase tracking-wider">Reguler</span>
+                                                                <span className="font-semibold text-slate-600 mt-0.5 block">{payroll.totalRegularHours.toFixed(1)} Jam</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-[9px] text-slate-400 block font-bold uppercase tracking-wider">Lembur</span>
+                                                                <span className="font-semibold text-slate-600 mt-0.5 block">{payroll.totalLemburHours.toFixed(1)} Jam</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-slate-900 text-white p-3 rounded-xl flex items-center justify-between shadow-xs">
+                                                            <div>
+                                                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Estimasi Gaji Bersih</span>
+                                                                <span className="text-base font-black text-emerald-400">Rp {payroll.grandTotalSalary.toLocaleString('id-ID')}</span>
+                                                            </div>
+                                                            <div>
                                                                 {payroll.status === 'paid' ? (
-                                                                    <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 font-extrabold rounded-full text-[9px] uppercase">Dibayar</span>
+                                                                    <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-extrabold rounded-full text-[9px] uppercase">Dibayar</span>
                                                                 ) : payroll.status === 'approved' ? (
-                                                                    <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-100 font-extrabold rounded-full text-[9px] uppercase">Disetujui</span>
+                                                                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 font-extrabold rounded-full text-[9px] uppercase">Disetujui</span>
                                                                 ) : (
-                                                                    <span className="px-1.5 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 font-extrabold rounded-full text-[9px] uppercase">Draft</span>
+                                                                    <span className="px-2 py-0.5 bg-white/10 text-slate-300 border border-white/20 font-extrabold rounded-full text-[9px] uppercase">Draft</span>
                                                                 )}
+                                                            </div>
+                                                        </div>
+
+                                                        {(payroll.totalTunjangan > 0 || payroll.totalPotongan > 0) && (
+                                                            <div className="flex items-center gap-2 text-[10px] font-bold">
                                                                 {payroll.totalTunjangan > 0 && (
-                                                                    <span className="text-[9px] font-bold text-emerald-600 block">+Rp {payroll.totalTunjangan.toLocaleString('id-ID')}</span>
+                                                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100">
+                                                                        +Tunjangan: Rp {payroll.totalTunjangan.toLocaleString('id-ID')}
+                                                                    </span>
                                                                 )}
                                                                 {payroll.totalPotongan > 0 && (
-                                                                    <span className="text-[9px] font-bold text-rose-600 block">-Rp {payroll.totalPotongan.toLocaleString('id-ID')}</span>
+                                                                    <span className="px-2 py-0.5 bg-rose-50 text-rose-700 rounded-md border border-rose-100">
+                                                                        -Potongan: Rp {payroll.totalPotongan.toLocaleString('id-ID')}
+                                                                    </span>
                                                                 )}
                                                             </div>
-                                                        </td>
-                                                        <td className="p-4 text-center">
-                                                            <div className="flex justify-center items-center gap-1.5 flex-wrap">
-                                                                <button
-                                                                    onClick={() => setSelectedEmpPayrollDetail(payroll)}
-                                                                    className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
-                                                                >
-                                                                    Rincian
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handlePrintSingleSlip(payroll)}
-                                                                    className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
-                                                                >
-                                                                    Cetak Slip
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleEditPayroll(payroll)}
-                                                                    className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-lg transition-colors cursor-pointer"
-                                                                    title="Edit Gaji Karyawan"
-                                                                >
-                                                                    <Edit2 size={13} />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleDeletePayroll(payroll)}
-                                                                    className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg transition-colors cursor-pointer"
-                                                                    title="Hapus / Reset Gaji"
-                                                                >
-                                                                    <Trash2 size={13} />
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
+                                                        )}
+
+                                                        <div className="flex items-center gap-1.5 pt-1">
+                                                            <button
+                                                                onClick={() => setSelectedEmpPayrollDetail(payroll)}
+                                                                className="flex-1 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl text-[10px] uppercase tracking-wider transition-colors text-center cursor-pointer"
+                                                            >
+                                                                Rincian
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handlePrintSingleSlip(payroll)}
+                                                                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-[10px] uppercase tracking-wider transition-colors text-center cursor-pointer"
+                                                            >
+                                                                Slip
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleEditPayroll(payroll)}
+                                                                className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-xl transition-colors cursor-pointer"
+                                                                title="Edit Gaji Karyawan"
+                                                            >
+                                                                <Edit2 size={14} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeletePayroll(payroll)}
+                                                                className="p-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-xl transition-colors cursor-pointer"
+                                                                title="Hapus / Reset Gaji"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 ))
                                             )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </>
+                                        </div>
+
+                                        {/* Pagination Footer */}
+                                        {renderPaginationBar(
+                                            pageGaji,
+                                            totalPagesGaji,
+                                            allPayrollData.length,
+                                            limitGaji,
+                                            setPageGaji,
+                                            setLimitGaji,
+                                            "Karyawan"
+                                        )}
+                                    </div>
+                                </>
+                            );
+                        })()
                     )}
                 </div>
             )}

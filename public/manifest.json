@@ -1,0 +1,57 @@
+{
+  "name": "US BILIBILI HADIR 162 - Presensi & Payroll Online",
+  "short_name": "Presensi 162",
+  "description": "Sistem Presensi, Laporan Kehadiran, dan Payroll Karyawan Online US Bilibili 162",
+  "id": "us-bilibili-hadir-162-pwa",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Absen Sekarang",
+      "short_name": "Absen",
+      "description": "Buka kamera untuk presensi masuk/pulang",
+      "url": "/checkinout",
+      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Pengajuan Izin",
+      "short_name": "Pengajuan",
+      "description": "Buat pengajuan izin, sakit, atau lembur",
+      "url": "/submissions",
+      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Riwayat Absensi",
+      "short_name": "Riwayat",
+      "description": "Lihat riwayat kehadiran harian",
+      "url": "/history",
+      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"]
+}

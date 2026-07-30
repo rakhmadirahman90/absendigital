@@ -14,4 +14,21 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  .pb-safe {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+  .pt-safe {
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+}
+
+/* Prevent unwanted blue highlight tap rectangle on mobile touch screens */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth Momentum Scrolling for iOS / Touch WebViews */
+html, body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: none;
 }

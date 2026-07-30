@@ -4,6 +4,7 @@ import { id } from 'date-fns/locale';
 import React, { useEffect, useState } from 'react';
 import { UserCircle2, Briefcase, Building, MapPin, Edit3, Save, Phone, Lock, X, Sun, Moon, Sparkles, CloudSun, CloudMoon, BarChart2 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
+import { calculateAutoBreakHours } from '../lib/utils';
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import RealTimeClock from '../components/RealTimeClock';
 import { toast } from 'react-hot-toast';
@@ -174,7 +175,7 @@ export default function Dashboard() {
           outTime = Number(outVal) || 0;
       }
 
-      const breakHours = rec.istirahat !== undefined ? Number(rec.istirahat) : 1;
+      const breakHours = calculateAutoBreakHours(inVal, outVal, rec.istirahat);
       const rawHours = Math.max(0, outTime - inTime);
       const netHours = Math.max(0, rawHours - breakHours);
 

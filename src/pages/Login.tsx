@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AppLogo from '../components/AppLogo';
+import PWAInstallBanner from '../components/PWAInstallBanner';
 import { 
   Building2, 
   Smartphone, 
@@ -589,6 +590,9 @@ export default function Login() {
         Siri' Na Pacce • Integrity & Pride<br />
         Presensi Karyawan US Bilibili 162
       </p>
+
+      {/* PWA Install Banner */}
+      <PWAInstallBanner />
 
       {/* Embedded CSS for custom keyframes like shimmer & shine */}
       <style>{`

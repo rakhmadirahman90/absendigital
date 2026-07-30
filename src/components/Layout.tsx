@@ -5,6 +5,7 @@ import { Home, MapPin, Clock, LogOut, Shield, ClipboardList, Users, CheckSquare,
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import NotificationBell from './NotificationBell';
+import PWAInstallBanner from './PWAInstallBanner';
 
 export default function Layout() {
   const { dbUser, logout } = useAuth();
@@ -147,6 +148,9 @@ export default function Layout() {
           </Link>
         ))}
       </nav>
+
+      {/* PWA Install Banner & Offline Indicator */}
+      <PWAInstallBanner />
     </div>
   );
 }

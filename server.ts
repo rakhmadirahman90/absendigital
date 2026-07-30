@@ -26,8 +26,21 @@ function writeLog(message: string) {
   }
 }
 
+app.use(express.static(path.join(process.cwd(), 'public')));
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+// PWA Icons Handler (Serves SVG icon with proper content type for PWA icon requests)
+app.get(["/pwa-192.png", "/pwa-512.png", "/apple-touch-icon.png", "/favicon.ico"], (req, res) => {
+  const iconPath = path.join(process.cwd(), "public", "icon.svg");
+  if (fs.existsSync(iconPath)) {
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    return res.sendFile(iconPath);
+  }
+  res.status(404).end();
 });
 
 // AI Face Verification Endpoint
