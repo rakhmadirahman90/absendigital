@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import { db } from '../lib/firebase';
 import { collection, getDocs, query, where, addDoc, updateDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
-import { MapPin, Camera, CheckCircle2, AlertCircle, RefreshCw, Navigation, Compass, Info } from 'lucide-react';
+import { MapPin, Camera, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Navigation, Compass, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import RealTimeClock from '../components/RealTimeClock';
@@ -629,10 +629,18 @@ export default function CheckInOut() {
 
       {/* Geofencing Live Validation Card */}
       {offices.length > 0 && (
-        <div className="bg-gradient-to-r from-slate-50 to-slate-100/50 p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3.5">
-          <div className="flex items-center justify-between">
+        <div className={`p-5 rounded-2xl border shadow-sm space-y-3.5 transition-all ${
+          isWithinRadius === false 
+            ? 'bg-gradient-to-r from-rose-50/80 via-amber-50/40 to-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 shadow-rose-100' 
+            : 'bg-gradient-to-r from-slate-50 to-slate-100/50 border-slate-200'
+        }`}>
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <Compass size={16} className="text-blue-600 animate-pulse" />
+              {isWithinRadius === false ? (
+                <AlertTriangle size={18} className="text-rose-600 animate-bounce" />
+              ) : (
+                <Compass size={16} className="text-blue-600 animate-pulse" />
+              )}
               <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Validasi Jarak Kantor</h3>
             </div>
             
@@ -642,11 +650,13 @@ export default function CheckInOut() {
                 Mencari GPS...
               </span>
             ) : isWithinRadius === true ? (
-              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100">
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-100 flex items-center gap-1">
+                <CheckCircle2 size={12} className="text-emerald-600" />
                 Dalam Radius Kantor
               </span>
             ) : isWithinRadius === false ? (
-              <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-100">
+              <span className="text-[10px] font-extrabold text-rose-700 bg-rose-100 px-3 py-1 rounded-full border border-rose-300 shadow-xs flex items-center gap-1 animate-pulse">
+                <AlertTriangle size={12} className="text-rose-600" />
                 Di Luar Radius Kantor
               </span>
             ) : (
@@ -691,10 +701,10 @@ export default function CheckInOut() {
                   {distanceFromOffice !== null && (
                     <p className="text-[11px]">
                       Jarak Anda saat ini:{' '}
-                      <strong className={isWithinRadius ? 'text-emerald-600' : 'text-rose-600'}>
+                      <strong className={isWithinRadius ? 'text-emerald-600' : 'text-rose-600 font-extrabold'}>
                         {Math.round(distanceFromOffice)} meter
                       </strong>{' '}
-                      {isWithinRadius ? '(Aman)' : '(Terlalu Jauh!)'}
+                      {isWithinRadius ? '(Aman)' : '(Di Luar Radius!)'}
                     </p>
                   )}
                 </>
@@ -711,13 +721,13 @@ export default function CheckInOut() {
 
           {/* Alert Message for UX guidance */}
           {!checkingLocation && isWithinRadius === false && (
-            <div className="p-3 bg-amber-50 text-amber-800 text-xs rounded-xl border border-amber-100 flex items-start gap-2">
-              <Info size={15} className="shrink-0 mt-0.5 text-amber-600" />
+            <div className="p-3 bg-rose-50 text-rose-900 text-xs rounded-xl border border-rose-200 flex items-start gap-2 shadow-xs">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5 text-rose-600 animate-bounce" />
               <div>
-                <p className="font-semibold">Perhatian: Anda Berada di Luar Jangkauan Kantor</p>
-                <p className="text-[11px] text-amber-700 mt-0.5">
+                <p className="font-extrabold text-rose-800">PERINGATAN: Anda Berada di Luar Jangkauan Radius Kantor!</p>
+                <p className="text-[11px] text-rose-700 mt-0.5 leading-relaxed">
                   {nearestOffice ? (
-                    <>Anda berjarak {distanceFromOffice ? Math.round(distanceFromOffice) : ''} meter dari <strong>{nearestOffice.name}</strong>. Silakan mendekat ke lokasi tersebut dalam radius {nearestOffice.radius} meter untuk melakukan absensi kehadiran.</>
+                    <>Anda berjarak <strong className="font-black text-rose-900">{distanceFromOffice ? Math.round(distanceFromOffice) : ''} meter</strong> dari <strong>{nearestOffice.name}</strong>. Anda melebihi batas radius izin sebesar <strong className="text-rose-900 font-black">+{distanceFromOffice && nearestOffice ? Math.max(0, Math.round(distanceFromOffice - nearestOffice.radius)) : 0} meter</strong>. Silakan mendekat ke lokasi kantor sebelum menekan tombol absen.</>
                   ) : (
                     <>Anda berada di luar jangkauan radius kantor mana pun. Silakan mendekat ke salah satu lokasi kantor yang telah ditentukan oleh admin.</>
                   )}
@@ -810,6 +820,23 @@ export default function CheckInOut() {
         </div>
 
         <div className="relative w-full max-w-sm aspect-[3/4] bg-slate-950 rounded-2xl overflow-hidden mb-8 shadow-[0_10px_30px_rgba(15,23,42,0.15)] border-4 border-white/90 ring-1 ring-slate-200 group">
+          {/* Geofencing Status Badge Overlay on Camera */}
+          {!checkingLocation && isWithinRadius !== null && (
+            <div className="absolute top-4 left-4 z-20">
+              {isWithinRadius ? (
+                <div className="bg-emerald-950/80 backdrop-blur-md border border-emerald-500/40 text-emerald-300 px-3 py-1.5 rounded-xl text-[10px] font-extrabold flex items-center gap-1.5 shadow-lg">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span>Radius OK ({Math.round(distanceFromOffice || 0)}m)</span>
+                </div>
+              ) : (
+                <div className="bg-rose-950/90 backdrop-blur-md border border-rose-500/60 text-rose-200 px-3 py-1.5 rounded-xl text-[10px] font-extrabold flex items-center gap-1.5 shadow-lg animate-pulse">
+                  <AlertTriangle size={12} className="text-rose-400" />
+                  <span>Luar Radius ({Math.round(distanceFromOffice || 0)}m)</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* @ts-ignore */}
           <Webcam
             audio={false}
@@ -862,22 +889,57 @@ export default function CheckInOut() {
           </div>
         )}
 
+        {/* Prominent Visual Warning Banner directly above buttons before submission */}
+        {!checkingLocation && isWithinRadius === false && (
+          <div className="w-full max-w-sm mb-5 p-4 bg-gradient-to-br from-rose-50 via-amber-50 to-rose-50 border-2 border-rose-300 text-rose-900 rounded-2xl shadow-md animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-rose-600 text-white rounded-xl shrink-0 shadow-sm animate-bounce">
+                <AlertTriangle size={20} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-black text-xs uppercase tracking-wider text-rose-900">
+                  Peringatan Jarak Geofencing!
+                </h4>
+                <p className="text-[11px] font-semibold text-rose-800 leading-relaxed">
+                  Lokasi Anda berjarak <strong className="text-rose-950 font-black">{Math.round(distanceFromOffice || 0)} meter</strong> dari kantor <span className="font-bold">{nearestOffice?.name || 'Pusat'}</span> (Batas izin radius: {nearestOffice?.radius || 100}m).
+                </p>
+                <div className="bg-rose-100/80 p-2 rounded-xl border border-rose-200 text-[10px] text-rose-900 font-bold mt-1.5 flex items-center gap-1.5">
+                  <Info size={13} className="text-rose-700 shrink-0" />
+                  <span>Harap mendekat ke lokasi kantor sebelum menekan tombol absen.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4 w-full max-w-sm relative z-10">
           <button
             onClick={() => captureAndLocate('checkin')}
             disabled={loading}
-            className="group/btn flex flex-col items-center justify-center p-4 bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 active:scale-[0.98] text-white rounded-2xl shadow-md hover:shadow-lg hover:shadow-blue-600/15 disabled:opacity-50 transition-all duration-300 cursor-pointer"
+            className={`group/btn flex flex-col items-center justify-center p-4 text-white rounded-2xl shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-50 transition-all duration-300 cursor-pointer ${
+              isWithinRadius === false
+                ? 'bg-gradient-to-br from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 ring-2 ring-rose-400'
+                : 'bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 shadow-blue-600/15'
+            }`}
           >
-            <span className="text-[10px] uppercase tracking-widest font-extrabold text-blue-100">Presensi</span>
+            <span className="text-[10px] uppercase tracking-widest font-extrabold text-blue-100">
+              {isWithinRadius === false ? 'Peringatan' : 'Presensi'}
+            </span>
             <span className="font-display font-extrabold text-lg tracking-wide mt-0.5 group-hover/btn:scale-105 transition-transform">MASUK</span>
           </button>
           
           <button
             onClick={() => captureAndLocate('checkout')}
             disabled={loading}
-            className="group/btn flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-800 to-slate-900 hover:from-slate-900 hover:to-black active:scale-[0.98] text-white rounded-2xl shadow-md hover:shadow-lg hover:shadow-slate-800/15 disabled:opacity-50 transition-all duration-300 cursor-pointer border border-slate-700/30"
+            className={`group/btn flex flex-col items-center justify-center p-4 text-white rounded-2xl shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-50 transition-all duration-300 cursor-pointer border ${
+              isWithinRadius === false
+                ? 'bg-gradient-to-br from-slate-800 to-rose-900 border-rose-500/50 ring-2 ring-rose-400'
+                : 'bg-gradient-to-br from-slate-800 to-slate-900 hover:from-slate-900 hover:to-black border-slate-700/30 shadow-slate-800/15'
+            }`}
           >
-            <span className="text-[10px] uppercase tracking-widest font-extrabold text-slate-300">Presensi</span>
+            <span className="text-[10px] uppercase tracking-widest font-extrabold text-slate-300">
+              {isWithinRadius === false ? 'Peringatan' : 'Presensi'}
+            </span>
             <span className="font-display font-extrabold text-lg tracking-wide mt-0.5 group-hover/btn:scale-105 transition-transform">PULANG</span>
           </button>
         </div>
