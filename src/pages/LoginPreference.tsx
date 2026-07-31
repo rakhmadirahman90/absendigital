@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { registerBiometricCredential, checkBiometricSupport } from '../lib/webauthn';
+import { registerBiometricCredential, checkBiometricSupport, isInIframe } from '../lib/webauthn';
 import AppLogo from '../components/AppLogo';
 import { 
   Shield, 
@@ -105,6 +105,12 @@ export default function LoginPreference() {
   const saveBiometricPreference = async () => {
     setLoading(true);
     try {
+      if (isInIframe()) {
+        toast.error('Registrasi Biometrik dibatasi iFrame pratinjau. Silakan klik "Buka di Tab Baru" untuk mendaftarkan sidik jari/wajah.', { id: 'bio-toast' });
+        setLoading(false);
+        return;
+      }
+
       const bioInfo = await checkBiometricSupport();
       if (!bioInfo.isSupported) {
         toast.error(bioInfo.message || 'Perangkat tidak mendukung biometrik.');

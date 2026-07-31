@@ -126,7 +126,39 @@ export default function CheckInOut() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  const [cameraKey, setCameraKey] = useState(0);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const webcamRef = useRef<Webcam>(null);
+
+  const getVideoConstraints = () => {
+    return {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      facingMode: facingMode
+    };
+  };
+
+  const handleUserMedia = () => {
+    setIsCameraReady(true);
+    setCameraError(null);
+    if (webcamRef.current && webcamRef.current.video) {
+      const v = webcamRef.current.video;
+      v.play().catch(e => console.warn('[CheckInOut] Video play notice:', e));
+    }
+  };
+
+  const handleUserMediaError = (err: any) => {
+    console.error('[CheckInOut] Webcam access error:', err);
+    setIsCameraReady(false);
+    setCameraError('Gagal mengakses kamera. Pastikan izin kamera diizinkan di browser Anda.');
+  };
+
+  const reloadCamera = () => {
+    setCameraError(null);
+    setIsCameraReady(false);
+    setCameraKey(prev => prev + 1);
+  };
 
   interface OfficeLocation {
     id: string;
@@ -937,15 +969,58 @@ export default function CheckInOut() {
 
           {/* @ts-ignore */}
           <Webcam
+            key={cameraKey}
             audio={false}
             ref={webcamRef}
             screenshotFormat="image/jpeg"
-            videoConstraints={{ facingMode }}
-            className="object-cover w-full h-full"
+            videoConstraints={getVideoConstraints()}
+            className="object-cover w-full h-full brightness-[1.05] contrast-[1.05]"
             playsInline={true}
             autoPlay={true}
             muted={true}
+            mirrored={facingMode === 'user'}
+            onUserMedia={handleUserMedia}
+            onUserMediaError={handleUserMediaError}
           />
+
+          {/* Camera Loading Overlay */}
+          {!isCameraReady && !cameraError && (
+            <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-10">
+              <div className="w-10 h-10 rounded-full border-2 border-sky-400 border-t-transparent animate-spin mb-3"></div>
+              <p className="text-white font-bold text-xs">Memuat Aliran Kamera...</p>
+              <p className="text-slate-400 text-[10px] mt-1">Harap izinkan akses kamera jika muncul petunjuk browser.</p>
+            </div>
+          )}
+
+          {/* Camera Error / Permission Fallback Overlay */}
+          {cameraError && (
+            <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center z-30 space-y-3">
+              <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+                <AlertCircle size={22} />
+              </div>
+              <p className="text-white font-bold text-xs leading-relaxed max-w-xs">{cameraError}</p>
+              <div className="flex flex-col gap-2 w-full max-w-xs pt-1">
+                <button
+                  type="button"
+                  onClick={reloadCamera}
+                  className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-3 rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                >
+                  <RefreshCw size={14} />
+                  <span>Coba Muat Ulang Kamera</span>
+                </button>
+                {window.self !== window.top && (
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600/50 font-bold py-2 px-3 rounded-xl text-[11px] transition text-center"
+                  >
+                    Buka di Tab Baru ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
           
           {/* Subtle Overlay Guide Pattern */}
           <div className="absolute inset-0 border-2 border-dashed border-white/20 rounded-xl pointer-events-none m-4 flex items-center justify-center">
@@ -957,7 +1032,10 @@ export default function CheckInOut() {
           {/* Switch Camera Button */}
           <button
             type="button"
-            onClick={() => setFacingMode(prev => prev === 'user' ? 'environment' : 'user')}
+            onClick={() => {
+              setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+              reloadCamera();
+            }}
             className="absolute top-4 right-4 bg-slate-900/80 hover:bg-slate-900 text-white px-3.5 py-2 rounded-xl flex items-center gap-1.5 text-[11px] font-bold transition-all border border-white/10 backdrop-blur-md cursor-pointer shadow-lg active:scale-95 z-20"
           >
             <RefreshCw size={12} className="text-sky-400" />

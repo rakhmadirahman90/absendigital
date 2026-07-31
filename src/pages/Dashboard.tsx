@@ -7,7 +7,7 @@ import { auth, db } from '../lib/firebase';
 import { calculateAutoBreakHours } from '../lib/utils';
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { getLocalAttendanceRecords } from '../lib/localStorageAttendance';
-import { registerBiometricCredential, checkBiometricSupport } from '../lib/webauthn';
+import { registerBiometricCredential, checkBiometricSupport, isInIframe } from '../lib/webauthn';
 import RealTimeClock from '../components/RealTimeClock';
 import { toast } from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -433,6 +433,12 @@ export default function Dashboard() {
         }
         updateData.pin = editPin;
       } else if (editLoginMethod === 'biometric') {
+        if (isInIframe()) {
+          toast.error('Registrasi Biometrik dibatasi iFrame pratinjau. Silakan klik "Buka di Tab Baru".');
+          setUpdating(false);
+          return;
+        }
+
         const bioInfo = await checkBiometricSupport();
         if (!bioInfo.isSupported) {
           toast.error(bioInfo.message || 'Perangkat tidak mendukung biometrik.');

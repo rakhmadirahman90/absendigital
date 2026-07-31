@@ -53,6 +53,14 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
+      if (isInIframe()) {
+        const iframeMsg = 'Fitur Biometrik dibatasi oleh iFrame pratinjau. Silakan klik "Buka di Tab Baru" untuk memindai sidik jari/wajah.';
+        setError(iframeMsg);
+        toast('Sensor biometrik fisik memerlukan Tab Baru karena batasan iFrame pratinjau.', { icon: 'ℹ️', id: 'bio-auth-toast' });
+        setLoading(false);
+        return;
+      }
+
       const bioInfo = await checkBiometricSupport();
       if (!bioInfo.isSupported) {
         throw new Error(bioInfo.message || 'Perangkat tidak mendukung biometrik.');
@@ -67,7 +75,6 @@ export default function Login() {
         login({ uid: target.uid, ...target });
       }
     } catch (err: any) {
-      console.error('Biometric auth failed:', err);
       const msg = err.message || 'Verifikasi Biometrik gagal.';
       setError(msg);
       toast.error(msg, { id: 'bio-auth-toast' });
@@ -788,20 +795,32 @@ export default function Login() {
                 </div>
               </div>
             ) : (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-3.5 rounded-2xl flex flex-col gap-2 font-mono shadow-sm">
+              <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3.5 rounded-2xl flex flex-col gap-2 font-mono shadow-sm">
                 <div className="flex items-start gap-2">
                   <span className="mt-0.5">⚠️</span>
                   <span>{error}</span>
                 </div>
-                {(error.includes('Tab Baru') || error.includes('iFrame') || error.includes('Biometrik')) && (
-                  <a
-                    href={window.location.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="self-start text-[11px] bg-red-100 hover:bg-red-200 text-red-800 font-extrabold px-3 py-1 rounded-lg underline transition-colors"
-                  >
-                    Buka Aplikasi di Tab Baru ↗
-                  </a>
+                {(error.toLowerCase().includes('tab baru') || error.toLowerCase().includes('iframe') || error.toLowerCase().includes('biometrik') || error.toLowerCase().includes('passkey')) && (
+                  <div className="flex flex-wrap gap-2 pt-1 font-sans">
+                    <a
+                      href={window.location.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] bg-rose-600 hover:bg-rose-700 text-white font-extrabold px-3 py-1.5 rounded-xl transition-colors shadow-sm"
+                    >
+                      <span>Buka Aplikasi di Tab Baru ↗</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError('');
+                        setLoginStep('password');
+                      }}
+                      className="text-[11px] bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-3 py-1.5 rounded-xl transition-colors"
+                    >
+                      Login Saja dengan Kata Sandi
+                    </button>
+                  </div>
                 )}
               </div>
             )
