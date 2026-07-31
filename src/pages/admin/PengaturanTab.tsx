@@ -252,11 +252,15 @@ export default function PengaturanTab() {
         // Auto trigger initial data sync
         handleSyncAllData(result.spreadsheetId);
       } else {
-        throw new Error(result.error || 'Gagal membuat spreadsheet');
+        let errorMsg = result.error || 'Gagal membuat spreadsheet';
+        if (errorMsg.includes('has not been used') || errorMsg.includes('disabled') || errorMsg.includes('sheets.googleapis.com')) {
+          errorMsg = 'Google Sheets API belum diaktifkan di Google Cloud. Silakan aktifkan koneksi Google Workspace terlebih dahulu.';
+        }
+        throw new Error(errorMsg);
       }
     } catch (err: any) {
       console.error('Error creating spreadsheet:', err);
-      toast.error(`Gagal membuat spreadsheet: ${err.message || err}`, { id: toastId });
+      toast.error(`${err.message || err}`, { id: toastId, duration: 6000 });
     } finally {
       setCreatingSheet(false);
     }

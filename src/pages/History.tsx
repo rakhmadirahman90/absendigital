@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { getLocalAttendanceRecords } from '../lib/localStorageAttendance';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { useAuth } from '../context/AuthContext';
@@ -69,13 +70,19 @@ export default function History() {
     
     const unsubAttendance = onSnapshot(qAttendance, (snapshot) => {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      records.sort((a: any, b: any) => b.tanggal.localeCompare(a.tanggal));
-      setHistory(records);
+      const localRecords = getLocalAttendanceRecords(user.uid);
+      const map = new Map();
+      records.forEach((r: any) => map.set(r.tanggal, r));
+      localRecords.forEach((r: any) => { if (!map.has(r.tanggal)) map.set(r.tanggal, r); });
+      const merged = Array.from(map.values());
+      merged.sort((a: any, b: any) => (b.tanggal || '').localeCompare(a.tanggal || ''));
+      setHistory(merged);
       setLoading(false);
     }, (error) => {
-      if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
-        console.warn("[History] Attendance sync notice:", error?.message || error);
-      }
+      console.warn("[History] Attendance sync notice (Quota/Network):", error?.message || error);
+      const localRecords = getLocalAttendanceRecords(user.uid);
+      localRecords.sort((a: any, b: any) => (b.tanggal || '').localeCompare(a.tanggal || ''));
+      setHistory(localRecords);
       setLoading(false);
     });
 

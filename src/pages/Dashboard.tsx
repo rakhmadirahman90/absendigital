@@ -6,6 +6,7 @@ import { UserCircle2, Briefcase, Building, MapPin, Edit3, Save, Phone, Lock, X, 
 import { auth, db } from '../lib/firebase';
 import { calculateAutoBreakHours } from '../lib/utils';
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { getLocalAttendanceRecords } from '../lib/localStorageAttendance';
 import RealTimeClock from '../components/RealTimeClock';
 import { toast } from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -125,11 +126,15 @@ export default function Dashboard() {
     
     const unsub = onSnapshot(q, (snapshot) => {
         const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setAllRecords(records);
+        const localRecs = getLocalAttendanceRecords(user.uid);
+        const map = new Map();
+        records.forEach((r: any) => map.set(r.tanggal, r));
+        localRecs.forEach((r: any) => { if (!map.has(r.tanggal)) map.set(r.tanggal, r); });
+        setAllRecords(Array.from(map.values()));
     }, (error) => {
-        if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
-          console.warn("[Dashboard] History sync notice:", error?.message || error);
-        }
+        console.warn("[Dashboard] History sync notice (Quota/Network):", error?.message || error);
+        const localRecs = getLocalAttendanceRecords(user.uid);
+        setAllRecords(localRecs);
     });
 
     return () => unsub();

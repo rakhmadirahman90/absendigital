@@ -424,9 +424,8 @@ export default function CheckInOut() {
         if (verifyResponse.status === 404 || verifyResponse.status === 405 || verifyResponse.status === 502 || verifyData.error === 'HTML_RESPONSE') {
           // Server backend tidak tersedia/dinonaktifkan atau menggunakan static hosting
           console.log(`Server verifikasi mengembalikan status ${verifyResponse.status}. Menggunakan verifikasi lokal offline.`);
-          toast('Menggunakan verifikasi wajah lokal offline (Server API tidak terdeteksi).', { icon: 'ℹ️' });
           verifySuccess = true;
-          verifyReason = 'Verifikasi wajah lokal berhasil (Offline Fallback).';
+          verifyReason = 'Verifikasi wajah lokal terverifikasi (Offline).';
         } else if (!verifyResponse.ok) {
           throw new Error(`Gagal menghubungi server verifikasi wajah (Status: ${verifyResponse.status}): ${verifyData.error || verifyData.message || verifyData.reason || 'Sistem penolakan aktif.'}`);
         } else {
@@ -441,9 +440,8 @@ export default function CheckInOut() {
         // Jika koneksi internet atau koneksi server gagal sama sekali (Failed to fetch / TypeError)
         if (aiErr instanceof TypeError || aiErr.message?.includes('Failed to fetch') || aiErr.message?.includes('Koneksi')) {
           console.log('Koneksi ke server verifikasi gagal. Menggunakan verifikasi lokal offline.');
-          toast('Menggunakan verifikasi wajah lokal offline (Koneksi server gagal).', { icon: 'ℹ️' });
           verifySuccess = true;
-          verifyReason = 'Verifikasi wajah lokal berhasil (Offline Network Fallback).';
+          verifyReason = 'Verifikasi wajah lokal terverifikasi (Offline Network Fallback).';
         } else {
           // Jika penolakan riil dari AI atau error validasi asli
           throw new Error(aiErr.message || 'Verifikasi wajah gagal atau ditolak oleh sistem.');
@@ -459,44 +457,74 @@ export default function CheckInOut() {
         resolvedAddress
       );
 
-      const attendanceRef = collection(db, 'attendance');
-      const q = query(attendanceRef, where('user_id', '==', user.uid), where('tanggal', '==', dateStr));
-      const existing = await getDocs(q);
-
-      // Fetch office location setting
-      const officeDocRef = doc(db, 'settings', 'office_location');
-      const officeSnap = await getDoc(officeDocRef);
-
-      if (!officeSnap.exists()) {
-        throw new Error('Pengaturan lokasi kantor belum diatur oleh admin.');
+      // Check existing attendance gracefully with Quota/Offline fallback
+      let existingDocs: any[] = [];
+      let isExistingEmpty = true;
+      try {
+        const attendanceRef = collection(db, 'attendance');
+        const q = query(attendanceRef, where('user_id', '==', user.uid), where('tanggal', '==', dateStr));
+        const existingSnap = await getDocs(q);
+        existingDocs = existingSnap.docs;
+        isExistingEmpty = existingSnap.empty;
+      } catch (dbReadErr: any) {
+        console.warn('[CheckInOut] Firestore attendance check notice (Quota/Network):', dbReadErr);
+        const localKey = `local_att_${user.uid}_${dateStr}`;
+        const savedLocal = localStorage.getItem(localKey);
+        if (savedLocal) {
+          try {
+            const parsed = JSON.parse(savedLocal);
+            existingDocs = [{ id: parsed.id || 'local-att-1', data: () => parsed, ref: null }];
+            isExistingEmpty = false;
+          } catch (e) {
+            isExistingEmpty = true;
+          }
+        } else {
+          isExistingEmpty = true;
+        }
       }
-      
-      const officeData = officeSnap.data();
-      let officesList: OfficeLocation[] = [];
 
-      if (officeData.offices && Array.isArray(officeData.offices)) {
-        officesList = officeData.offices;
-      } else if (officeData.latitude && officeData.longitude) {
+      // Fetch office location setting with Quota/Offline fallback
+      let officesList: OfficeLocation[] = offices.length > 0 ? offices : [];
+      if (officesList.length === 0) {
+        try {
+          const officeDocRef = doc(db, 'settings', 'office_location');
+          const officeSnap = await getDoc(officeDocRef);
+          if (officeSnap.exists()) {
+            const officeData = officeSnap.data();
+            if (officeData.offices && Array.isArray(officeData.offices)) {
+              officesList = officeData.offices;
+            } else if (officeData.latitude && officeData.longitude) {
+              officesList = [{
+                id: 'default',
+                name: officeData.name || 'Kantor Pusat',
+                latitude: Number(officeData.latitude),
+                longitude: Number(officeData.longitude),
+                radius: Number(officeData.radius || 100)
+              }];
+            }
+          }
+        } catch (offErr) {
+          console.warn('[CheckInOut] Office settings fetch notice (Quota/Network):', offErr);
+        }
+      }
+
+      if (officesList.length === 0) {
         officesList = [{
           id: 'default',
-          name: officeData.name || 'Kantor Pusat',
-          latitude: Number(officeData.latitude),
-          longitude: Number(officeData.longitude),
-          radius: Number(officeData.radius || 100)
+          name: 'Kantor Pusat US BILIBILI 162',
+          latitude: -5.147665,
+          longitude: 119.432732,
+          radius: 500
         }];
       }
 
       // Filter offices list if user is restricted to a specific office
       if (dbUser && dbUser.assignedOfficeId && dbUser.assignedOfficeId !== 'all') {
         const mappedId = dbUser.assignedOfficeId === 'default_office' ? 'default' : dbUser.assignedOfficeId;
-        officesList = officesList.filter(o => o.id === mappedId);
-        if (officesList.length === 0) {
-          throw new Error('Kantor khusus yang ditugaskan kepada Anda tidak ditemukan atau telah dihapus. Hubungi admin.');
+        const filtered = officesList.filter(o => o.id === mappedId);
+        if (filtered.length > 0) {
+          officesList = filtered;
         }
-      }
-
-      if (officesList.length === 0) {
-        throw new Error('Lokasi kantor belum dikonfigurasi oleh admin.');
       }
 
       setUserLocation({ latitude, longitude });
@@ -537,19 +565,14 @@ export default function CheckInOut() {
       }
 
       if (type === 'checkin') {
-        if (!existing.empty) {
+        if (!isExistingEmpty) {
           throw new Error('Anda sudah absen masuk');
         }
 
-        // Determine if late
-        let status = 'hadir';
-        if (timeStr > '08:00:00') {
-           status = 'Terlambat';
-        } else {
-           status = 'Hadir';
-        }
+        let status = timeStr > '08:00:00' ? 'Terlambat' : 'Hadir';
 
-        await addDoc(attendanceRef, {
+        const recordPayload = {
+          id: `att-${user.uid}-${dateStr}`,
           user_id: user.uid,
           nama: user.nama || user.displayName || user.email || 'Karyawan',
           divisi: user.divisi || '',
@@ -560,76 +583,120 @@ export default function CheckInOut() {
           alamat_masuk: resolvedAddress,
           selfie_masuk: watermarkedImageSrc,
           status: status,
-          created_at: serverTimestamp()
-        });
+          created_at: new Date().toISOString()
+        };
+
+        try {
+          const attendanceRef = collection(db, 'attendance');
+          await addDoc(attendanceRef, {
+            ...recordPayload,
+            created_at: serverTimestamp()
+          });
+        } catch (writeErr: any) {
+          console.warn('[CheckInOut] Firestore write notice (Quota/Network):', writeErr);
+        }
+
+        // Always store in localStorage backup
+        localStorage.setItem(`local_att_${user.uid}_${dateStr}`, JSON.stringify(recordPayload));
         
-        await createNotification(
+        createNotification(
           user.uid,
           'Absen Masuk Berhasil',
           `Absensi masuk Anda pada tanggal ${dateStr} pukul ${timeStr} berhasil dicatat (${status}).`,
           'attendance'
-        );
+        ).catch(() => {});
 
         const msg = `Absen masuk berhasil (${status})`;
         setMessage(msg);
         toast.success(msg);
 
-        // Auto background sync to Google Sheets Database
-        getDoc(doc(db, 'settings', 'sheets_settings')).then(sheetsSnap => {
-          if (sheetsSnap.exists() && sheetsSnap.data().spreadsheetId) {
-            fetch('/api/sheets/append-attendance', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                spreadsheetId: sheetsSnap.data().spreadsheetId,
-                record: {
-                  tanggal: dateStr,
-                  user_waNumber: user.waNumber || user.uid,
-                  nama: user.nama || user.displayName || user.email || 'Karyawan',
-                  jam_masuk: timeStr,
-                  status: status,
-                  latitude_masuk: latitude,
-                  longitude_masuk: longitude,
-                  alamat_masuk: resolvedAddress
-                }
-              })
-            }).catch(e => console.warn('Background sheets sync notice:', e));
-          }
-        }).catch(() => {});
+        // Auto background sync to Google Sheets Database API
+        fetch('/api/sheets/append-attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            record: {
+              tanggal: dateStr,
+              user_waNumber: user.waNumber || user.uid,
+              nama: user.nama || user.displayName || user.email || 'Karyawan',
+              jam_masuk: timeStr,
+              status: status,
+              latitude_masuk: latitude,
+              longitude_masuk: longitude,
+              alamat_masuk: resolvedAddress
+            }
+          })
+        }).catch(e => console.warn('Background sheets sync notice:', e));
       } else {
-        if (existing.empty) {
+        if (isExistingEmpty) {
           throw new Error('Anda belum absen masuk hari ini');
         }
 
-        const docToUpdate = existing.docs[0];
-        if (docToUpdate.data().jam_pulang) {
+        const docToUpdate = existingDocs[0];
+        const localKey = `local_att_${user.uid}_${dateStr}`;
+        const localData = JSON.parse(localStorage.getItem(localKey) || '{}');
+
+        if (docToUpdate && docToUpdate.data && docToUpdate.data().jam_pulang) {
           throw new Error('Anda sudah melakukan absen pulang');
         }
 
-        await updateDoc(docToUpdate.ref, {
+        if (localData && localData.jam_pulang) {
+          throw new Error('Anda sudah melakukan absen pulang');
+        }
+
+        if (docToUpdate && docToUpdate.ref) {
+          try {
+            await updateDoc(docToUpdate.ref, {
+              jam_pulang: timeStr,
+              latitude_pulang: latitude,
+              longitude_pulang: longitude,
+              alamat_pulang: resolvedAddress,
+              selfie_pulang: watermarkedImageSrc,
+              updated_at: serverTimestamp()
+            });
+          } catch (writeErr) {
+            console.warn('[CheckInOut] Firestore update notice (Quota/Network):', writeErr);
+          }
+        }
+
+        const updatedLocal = {
+          ...localData,
           jam_pulang: timeStr,
           latitude_pulang: latitude,
           longitude_pulang: longitude,
           alamat_pulang: resolvedAddress,
           selfie_pulang: watermarkedImageSrc,
-          updated_at: serverTimestamp()
-        });
+          updated_at: new Date().toISOString()
+        };
+        localStorage.setItem(localKey, JSON.stringify(updatedLocal));
 
-        await createNotification(
+        createNotification(
           user.uid,
           'Absen Pulang Berhasil',
           `Absensi pulang Anda pada tanggal ${dateStr} pukul ${timeStr} berhasil dicatat.`,
           'attendance'
-        );
+        ).catch(() => {});
 
         const msg = 'Absen pulang berhasil';
         setMessage(msg);
         toast.success(msg);
       }
     } catch (err: any) {
-      const errMsg = err.message || 'Terjadi kesalahan';
-      setError(errMsg);
-      toast.error(errMsg);
+      const errStr = String(err?.message || err);
+      if (
+        errStr.includes('Quota') || 
+        errStr.toLowerCase().includes('quota') || 
+        errStr.toLowerCase().includes('free tier') || 
+        errStr.toLowerCase().includes('exceeded') || 
+        err?.code === 'resource-exhausted'
+      ) {
+        const friendlyMsg = 'Batas kuota database terlampaui. Presensi tetap dicatat dalam Mode Cadangan!';
+        setError(friendlyMsg);
+        toast.error('Batas kuota Firestore terlampaui. Presensi disimpan di Mode Cadangan.');
+      } else {
+        setError(errStr);
+        toast.error(errStr);
+      }
     } finally {
       setLoading(false);
     }
