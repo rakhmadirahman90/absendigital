@@ -1486,7 +1486,7 @@ app.post("/api/sheets/get-user", async (req, res) => {
     }
 
     if (!spreadsheetId) {
-      return res.status(400).json({ success: false, found: false, error: "Spreadsheet ID belum dikonfigurasi." });
+      return res.json({ success: false, found: false, message: "Spreadsheet ID belum dikonfigurasi." });
     }
 
     const auth = getGoogleAuthClient(accessToken);
