@@ -44,7 +44,11 @@ import {
   Play,
   Database,
   Cpu,
-  Server
+  Server,
+  FileSpreadsheet,
+  Table,
+  CloudDownload,
+  FileText
 } from 'lucide-react';
 
 interface OfficeLocation {
@@ -78,13 +82,31 @@ interface WALog {
   timestamp: string;
 }
 
+interface SheetsSettings {
+  enabled: boolean;
+  spreadsheetId: string;
+  spreadsheetUrl: string;
+  autoSync: boolean;
+  lastSyncedAt?: string;
+}
+
 export default function PengaturanTab() {
-  const [activeTab, setActiveTab] = useState<'office' | 'wa'>('office');
+  const [activeTab, setActiveTab] = useState<'office' | 'wa' | 'sheets'>('office');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [offices, setOffices] = useState<OfficeLocation[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
   
+  // Google Sheets Settings State
+  const [sheetsSettings, setSheetsSettings] = useState<SheetsSettings>({
+    enabled: true,
+    spreadsheetId: '',
+    spreadsheetUrl: '',
+    autoSync: true,
+  });
+  const [creatingSheet, setCreatingSheet] = useState(false);
+  const [syncingSheet, setSyncingSheet] = useState(false);
+
   // Office Location Form State
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingOfficeId, setEditingOfficeId] = useState<string | null>(null);
@@ -141,8 +163,19 @@ export default function PengaturanTab() {
           }
           setOffices(officesList);
         }
-      } catch (error) {
-        console.error('Error fetching office settings:', error);
+      } catch (error: any) {
+        if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+          console.warn('[Office Settings] Firestore quota limit reached, using default office location.');
+        } else {
+          console.warn('Error fetching office settings:', error);
+        }
+        setOffices([{
+          id: 'default',
+          name: 'Kantor Pusat US BILIBILI 162',
+          latitude: -5.147665,
+          longitude: 119.432732,
+          radius: 500
+        }]);
       }
     };
 
@@ -161,19 +194,214 @@ export default function PengaturanTab() {
             wavioToken: data.wavioToken || (data.apiMode === 'wavio' ? data.apiToken : ''),
           }));
         }
-      } catch (error) {
-        console.error('Error fetching WA settings:', error);
+      } catch (error: any) {
+        console.warn('Could not fetch WA settings:', error?.message || error);
+      }
+    };
+
+    const fetchSheetsSettings = async () => {
+      try {
+        const docRef = doc(db, 'settings', 'sheets_settings');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data() as SheetsSettings;
+          setSheetsSettings(prev => ({
+            ...prev,
+            ...data,
+          }));
+        }
+      } catch (error: any) {
+        console.warn('Could not fetch Sheets settings:', error?.message || error);
       }
     };
 
     const fetchAllData = async () => {
       setLoading(true);
-      await Promise.all([fetchOfficeSettings(), fetchWASettings()]);
+      await Promise.all([fetchOfficeSettings(), fetchWASettings(), fetchSheetsSettings()]);
       setLoading(false);
     };
 
     fetchAllData();
   }, []);
+
+  // Google Sheets Action Handlers
+  const handleCreateSpreadsheet = async () => {
+    setCreatingSheet(true);
+    const toastId = toast.loading('Membuat Google Spreadsheet Database baru di Google Drive...');
+    try {
+      const response = await fetch('/api/sheets/create-spreadsheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Database US BILIBILI HADIR 162'
+        })
+      });
+      const result = await response.json();
+      if (result.success) {
+        const newSettings: SheetsSettings = {
+          enabled: true,
+          spreadsheetId: result.spreadsheetId,
+          spreadsheetUrl: result.spreadsheetUrl,
+          autoSync: true,
+          lastSyncedAt: new Date().toISOString()
+        };
+        setSheetsSettings(newSettings);
+        await setDoc(doc(db, 'settings', 'sheets_settings'), newSettings, { merge: true });
+        toast.success(result.message || 'Spreadsheet Database berhasil dibuat!', { id: toastId });
+        
+        // Auto trigger initial data sync
+        handleSyncAllData(result.spreadsheetId);
+      } else {
+        throw new Error(result.error || 'Gagal membuat spreadsheet');
+      }
+    } catch (err: any) {
+      console.error('Error creating spreadsheet:', err);
+      toast.error(`Gagal membuat spreadsheet: ${err.message || err}`, { id: toastId });
+    } finally {
+      setCreatingSheet(false);
+    }
+  };
+
+  const handleSyncAllData = async (targetSheetId?: string) => {
+    const sid = targetSheetId || sheetsSettings.spreadsheetId;
+    if (!sid) {
+      toast.error('Silakan isi atau buat Spreadsheet ID terlebih dahulu.');
+      return;
+    }
+
+    setSyncingSheet(true);
+    const toastId = toast.loading('Mengambil data dari database & menyinkronkan ke Google Sheets...');
+    try {
+      // 1. Fetch Users
+      const empList: any[] = [];
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        usersSnap.forEach(d => empList.push({ id: d.id, ...d.data() }));
+      } catch (e) {
+        console.warn('Could not fetch users for sheets sync:', e);
+      }
+
+      // 2. Fetch Attendance
+      const attList: any[] = [];
+      try {
+        const attSnap = await getDocs(query(collection(db, 'attendance'), limit(2000)));
+        attSnap.forEach(d => attList.push({ id: d.id, ...d.data() }));
+      } catch (e) {
+        console.warn('Could not fetch attendance for sheets sync:', e);
+      }
+
+      // 3. Fetch Submissions (Leave & Overtime)
+      const subList: any[] = [];
+      try {
+        const leaveSnap = await getDocs(query(collection(db, 'leave_requests'), limit(1000)));
+        leaveSnap.forEach(d => subList.push({ id: d.id, tipe: 'leave', ...d.data() }));
+      } catch (e) {}
+      try {
+        const overSnap = await getDocs(query(collection(db, 'overtime'), limit(1000)));
+        overSnap.forEach(d => subList.push({ id: d.id, tipe: 'overtime', ...d.data() }));
+      } catch (e) {}
+
+      // 4. Fetch Payrolls
+      const payList: any[] = [];
+      try {
+        const paySnap = await getDocs(query(collection(db, 'payrolls'), limit(1000)));
+        paySnap.forEach(d => payList.push({ id: d.id, ...d.data() }));
+      } catch (e) {
+        console.warn('Could not fetch payrolls for sheets sync:', e);
+      }
+
+      // 5. Fetch Settings
+      const setList: any[] = [];
+      try {
+        const officeDoc = await getDoc(doc(db, 'settings', 'office_location'));
+        if (officeDoc.exists()) setList.push({ id: 'office_location', category: 'Lokasi Kantor', ...officeDoc.data() });
+        const waDoc = await getDoc(doc(db, 'settings', 'wa_settings'));
+        if (waDoc.exists()) setList.push({ id: 'wa_settings', category: 'WhatsApp Gateway', ...waDoc.data() });
+        const sheetsDoc = await getDoc(doc(db, 'settings', 'sheets_settings'));
+        if (sheetsDoc.exists()) setList.push({ id: 'sheets_settings', category: 'Spreadsheet', ...sheetsDoc.data() });
+        const payrollDoc = await getDoc(doc(db, 'settings', 'payroll_settings'));
+        if (payrollDoc.exists()) setList.push({ id: 'payroll_settings', category: 'Pengaturan Gaji', ...payrollDoc.data() });
+      } catch (e) {}
+
+      // 6. Fetch Notifications
+      const notifList: any[] = [];
+      try {
+        const notifSnap = await getDocs(query(collection(db, 'notifications'), limit(1000)));
+        notifSnap.forEach(d => notifList.push({ id: d.id, ...d.data() }));
+      } catch (e) {}
+
+      // 7. Fetch WhatsApp Logs
+      const waLogList: any[] = [];
+      try {
+        const waLogSnap = await getDocs(query(collection(db, 'wa_logs'), limit(500)));
+        waLogSnap.forEach(d => waLogList.push({ id: d.id, ...d.data() }));
+      } catch (e) {}
+
+      // 8. Fetch Attendance Adjustments
+      const adjList: any[] = [];
+      try {
+        const adjSnap = await getDocs(query(collection(db, 'attendance_adjustments'), limit(500)));
+        adjSnap.forEach(d => adjList.push({ id: d.id, ...d.data() }));
+      } catch (e) {}
+
+      // Send complete payload to backend Google Sheets API
+      const res = await fetch('/api/sheets/sync-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spreadsheetId: sid,
+          employees: empList,
+          attendance: attList,
+          submissions: subList,
+          payrolls: payList,
+          settings: setList,
+          notifications: notifList,
+          waLogs: waLogList,
+          adjustments: adjList
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        const nowStr = new Date().toISOString();
+        const updated = {
+          ...sheetsSettings,
+          spreadsheetId: sid,
+          spreadsheetUrl: sheetsSettings.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${sid}/edit`,
+          lastSyncedAt: nowStr
+        };
+        setSheetsSettings(updated);
+        await setDoc(doc(db, 'settings', 'sheets_settings'), updated, { merge: true });
+
+        toast.success(data.message || 'Sinkronisasi Spreadsheet Berhasil!', { id: toastId });
+      } else {
+        throw new Error(data.error || 'Sinkronisasi gagal');
+      }
+    } catch (err: any) {
+      console.error('Error syncing to sheets:', err);
+      toast.error(`Gagal sinkronisasi: ${err.message || err}`, { id: toastId });
+    } finally {
+      setSyncingSheet(false);
+    }
+  };
+
+  const handleSaveSheetsSettings = async () => {
+    setSaving(true);
+    try {
+      const url = sheetsSettings.spreadsheetId ? `https://docs.google.com/spreadsheets/d/${sheetsSettings.spreadsheetId}/edit` : '';
+      const toSave = {
+        ...sheetsSettings,
+        spreadsheetUrl: url
+      };
+      await setDoc(doc(db, 'settings', 'sheets_settings'), toSave, { merge: true });
+      setSheetsSettings(toSave);
+      toast.success('Pengaturan Database Spreadsheet berhasil disimpan');
+    } catch (err: any) {
+      toast.error(`Gagal menyimpan: ${err.message || err}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Subscribe to Employees list for Manual WA
   useEffect(() => {
@@ -186,7 +414,9 @@ export default function PengaturanTab() {
         });
         setEmployees(list);
       }, (error) => {
-        console.error("Error listening to employees for WA:", error);
+        if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+          console.warn("[PengaturanTab] Employees sync notice:", error?.message || error);
+        }
       });
       return () => unsubscribe();
     }
@@ -215,7 +445,9 @@ export default function PengaturanTab() {
         setWaLogs(logs);
         setLogsLoading(false);
       }, (err) => {
-        console.error('Error loading WA logs:', err);
+        if (!err?.message?.includes('Quota') && (err as any)?.code !== 'resource-exhausted') {
+          console.warn('[PengaturanTab] WA logs sync notice:', err?.message || err);
+        }
         setLogsLoading(false);
       });
       return () => unsubscribe();
@@ -684,8 +916,22 @@ export default function PengaturanTab() {
           }`}
         >
           <MessageSquare size={14} />
-          <span>Pengingat WhatsApp (Otomatis & Manual)</span>
+          <span>Pengingat WhatsApp</span>
           <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        </button>
+        <button
+          onClick={() => setActiveTab('sheets')}
+          className={`flex-1 md:flex-initial flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-xs font-bold tracking-wide transition-all relative ${
+            activeTab === 'sheets'
+              ? 'bg-gradient-to-r from-green-600 to-emerald-700 text-white shadow-md shadow-green-600/10'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <FileSpreadsheet size={14} />
+          <span>Database Spreadsheet (Google Sheets)</span>
+          {sheetsSettings.spreadsheetId && (
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+          )}
         </button>
       </div>
 
@@ -1462,6 +1708,230 @@ export default function PengaturanTab() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================= SPREADSHEET DATABASE TAB CONTENT ======================= */}
+      {activeTab === 'sheets' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none"></div>
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-2 max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold backdrop-blur-md">
+                  <FileSpreadsheet size={13} />
+                  <span>Google Sheets & Google Drive Database Integration</span>
+                </div>
+                <h3 className="text-2xl md:text-3xl font-extrabold tracking-tight">Database Spreadsheet Cloud</h3>
+                <p className="text-emerald-100/80 text-xs md:text-sm leading-relaxed">
+                  Hubungkan aplikasi presensi Anda langsung ke Google Spreadsheet. Seluruh data Karyawan, Presensi Harian, Pengajuan Cuti/Lembur, dan Rekap Gaji tersimpan aman & dapat diakses secara langsung melalui Google Drive.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={handleCreateSpreadsheet}
+                  disabled={creatingSheet}
+                  className="px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles size={16} className={creatingSheet ? "animate-spin" : ""} />
+                  <span>{creatingSheet ? "Membuat Spreadsheet..." : "Buat Spreadsheet Baru (Auto Drive)"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Config & Status Card */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div>
+                <h4 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Database size={18} className="text-emerald-600" />
+                  <span>Konfigurasi Google Spreadsheet</span>
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Masukkan Spreadsheet ID yang sudah ada atau klik tombol di atas untuk membuat Spreadsheet baru secara otomatis.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border ${
+                  sheetsSettings.spreadsheetId 
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${sheetsSettings.spreadsheetId ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                  <span>{sheetsSettings.spreadsheetId ? 'Spreadsheet Terhubung' : 'Belum Dikonfigurasi'}</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 block">Spreadsheet ID / URL</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={sheetsSettings.spreadsheetId}
+                    onChange={(e) => {
+                      let val = e.target.value.trim();
+                      if (val.includes('/d/')) {
+                        const parts = val.split('/d/');
+                        if (parts[1]) {
+                          val = parts[1].split('/')[0];
+                        }
+                      }
+                      setSheetsSettings(prev => ({ ...prev, spreadsheetId: val }));
+                    }}
+                    placeholder="Contoh: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Dapat berupa ID unik spreadsheet atau URL lengkap dari Google Sheets.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 block">Status Sinkronisasi Terakhir</label>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <Clock size={14} className="text-slate-400" />
+                    <span>
+                      {sheetsSettings.lastSyncedAt 
+                        ? new Date(sheetsSettings.lastSyncedAt).toLocaleString('id-ID', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short'
+                          }) + ' WITA'
+                        : 'Belum pernah disinkronkan'
+                      }
+                    </span>
+                  </div>
+                  {sheetsSettings.lastSyncedAt && (
+                    <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-md">Aktif</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Sinkronisasi menyimpan seluruh koleksi Firestore ke dalam sheet tab terpisah.
+                </p>
+              </div>
+            </div>
+
+            {/* Action Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleSyncAllData()}
+                  disabled={syncingSheet || !sheetsSettings.spreadsheetId}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw size={14} className={syncingSheet ? "animate-spin" : ""} />
+                  <span>{syncingSheet ? "Menyinkronkan Data..." : "Sinkronkan Semua Data Now"}</span>
+                </button>
+
+                {sheetsSettings.spreadsheetId && (
+                  <a
+                    href={sheetsSettings.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${sheetsSettings.spreadsheetId}/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
+                  >
+                    <ExternalLink size={14} />
+                    <span>Buka Google Sheets</span>
+                  </a>
+                )}
+              </div>
+
+              <button
+                onClick={handleSaveSheetsSettings}
+                disabled={saving}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition cursor-pointer"
+              >
+                <Check size={14} />
+                <span>Simpan Pengaturan</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Sheet Structure Visualizer */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Sheet 1 */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3 hover:border-emerald-300 transition">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                  #1
+                </div>
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Tab 1</span>
+              </div>
+              <div>
+                <h5 className="font-bold text-slate-800 text-sm">Daftar_Karyawan</h5>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Menyimpan data identitas karyawan: No WA, Nama, Divisi, Jabatan, Role, & Status.
+                </p>
+              </div>
+              <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 font-mono">
+                Kolom: A-G
+              </div>
+            </div>
+
+            {/* Sheet 2 */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3 hover:border-emerald-300 transition">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center font-bold text-xs">
+                  #2
+                </div>
+                <span className="text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full">Tab 2</span>
+              </div>
+              <div>
+                <h5 className="font-bold text-slate-800 text-sm">Presensi_Harian</h5>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Menyimpan log absen harian: ID, Tanggal, Jam Masuk, Jam Pulang, Koordinat GPS, & Alamat.
+                </p>
+              </div>
+              <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 font-mono">
+                Kolom: A-I
+              </div>
+            </div>
+
+            {/* Sheet 3 */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3 hover:border-emerald-300 transition">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs">
+                  #3
+                </div>
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">Tab 3</span>
+              </div>
+              <div>
+                <h5 className="font-bold text-slate-800 text-sm">Pengajuan_Cuti_Lembur</h5>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Menyimpan rekap pengajuan izin, cuti, dan lembur berserta status persetujuan admin.
+                </p>
+              </div>
+              <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 font-mono">
+                Kolom: A-I
+              </div>
+            </div>
+
+            {/* Sheet 4 */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3 hover:border-emerald-300 transition">
+              <div className="flex items-center justify-between">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-xs">
+                  #4
+                </div>
+                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Tab 4</span>
+              </div>
+              <div>
+                <h5 className="font-bold text-slate-800 text-sm">Laporan_Gaji</h5>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Rekapitulasi penggajian bulanan, rincian jam reguler, jam lembur, tunjangan, potongan, & gaji bersih.
+                </p>
+              </div>
+              <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 font-mono">
+                Kolom: A-M
+              </div>
             </div>
           </div>
         </div>

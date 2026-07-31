@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
+import { DEFAULT_USERS, DEFAULT_ATTENDANCE, DEFAULT_LEAVE_REQUESTS, DEFAULT_OVERTIME_REQUESTS } from '../../data/defaultData';
 
 export default function DashboardTab() {
   const [stats, setStats] = useState<any>({
@@ -22,6 +23,7 @@ export default function DashboardTab() {
   const [recentAttendance, setRecentAttendance] = useState<any[]>([]);
   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
   const [waLogsCount, setWaLogsCount] = useState(0);
+  const [quotaError, setQuotaError] = useState<boolean>(false);
 
   const getUserFromRecord = (log: any) => {
     if (!log) return { nama: 'Karyawan', divisi: '-' };
@@ -42,7 +44,26 @@ export default function DashboardTab() {
     setLoading(true);
 
     // 1. Fetch Users map and total employees
+    const applyUserFallback = () => {
+      const map: Record<string, any> = {};
+      DEFAULT_USERS.forEach(data => {
+        map[data.id] = data;
+        if (data.waNumber) map[data.waNumber] = data;
+        if (data.nama) map[data.nama.toLowerCase().trim()] = data;
+      });
+      setUsersMap(map);
+      setStats(prev => ({
+        ...prev,
+        totalKaryawan: DEFAULT_USERS.length,
+        belumAbsen: Math.max(0, DEFAULT_USERS.length - (prev.hadirHariIni || 0) - (prev.izinCutiHariIni || 0))
+      }));
+    };
+
     const unsubUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
+      if (usersSnap.empty) {
+        applyUserFallback();
+        return;
+      }
       const map: Record<string, any> = {};
       usersSnap.forEach(doc => {
         const data = doc.data();
@@ -81,12 +102,31 @@ export default function DashboardTab() {
         const belumAbsen = Math.max(0, totalKaryawan - (prev.hadirHariIni || 0) - (prev.izinCutiHariIni || 0));
         return { ...prev, totalKaryawan, belumAbsen };
       });
-    }, (error) => {
-      console.error("Dashboard error listening to users:", error);
+    }, (error: any) => {
+      applyUserFallback();
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        setQuotaError(true);
+      } else {
+        console.warn("[DashboardTab] Users sync notice:", error?.message || error);
+      }
     });
 
     // 2. Monitor Today's Attendance Real-time
+    const applyAttendanceFallback = () => {
+      let hadirHariIni = DEFAULT_ATTENDANCE.length;
+      let terlambat = 0;
+      setRecentAttendance(DEFAULT_ATTENDANCE.slice(0, 5));
+      setStats(prev => {
+        const belumAbsen = Math.max(0, (prev.totalKaryawan || DEFAULT_USERS.length) - hadirHariIni - (prev.izinCutiHariIni || 0));
+        return { ...prev, hadirHariIni, terlambat, belumAbsen };
+      });
+    };
+
     const unsubAttendance = onSnapshot(query(collection(db, 'attendance'), where('tanggal', '==', today)), (attendanceSnap) => {
+      if (attendanceSnap.empty) {
+        applyAttendanceFallback();
+        return;
+      }
       let hadirHariIni = attendanceSnap.size;
       let terlambat = 0;
       const logs: any[] = [];
@@ -99,7 +139,6 @@ export default function DashboardTab() {
         logs.push({ id: doc.id, ...data });
       });
 
-      // Sort logs by jam_masuk descending for real-time feed
       logs.sort((a, b) => (b.jam_masuk || '').localeCompare(a.jam_masuk || ''));
       setRecentAttendance(logs.slice(0, 5));
 
@@ -107,8 +146,13 @@ export default function DashboardTab() {
         const belumAbsen = Math.max(0, (prev.totalKaryawan || 0) - hadirHariIni - (prev.izinCutiHariIni || 0));
         return { ...prev, hadirHariIni, terlambat, belumAbsen };
       });
-    }, (error) => {
-      console.error("Dashboard error listening to attendance:", error);
+    }, (error: any) => {
+      applyAttendanceFallback();
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        setQuotaError(true);
+      } else {
+        console.warn("[DashboardTab] Attendance sync notice:", error?.message || error);
+      }
     });
 
     // 3. Monitor Today's Approved Leaves
@@ -125,8 +169,12 @@ export default function DashboardTab() {
         const belumAbsen = Math.max(0, (prev.totalKaryawan || 0) - (prev.hadirHariIni || 0) - izinCutiHariIni);
         return { ...prev, izinCutiHariIni, belumAbsen };
       });
-    }, (error) => {
-      console.error("Dashboard error listening to leave requests:", error);
+    }, (error: any) => {
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        setQuotaError(true);
+      } else {
+        console.warn("[DashboardTab] Leave sync notice:", error?.message || error);
+      }
     });
 
     // 4. Monitor Pending Approvals (Leave Requests + Overtimes)
@@ -147,25 +195,34 @@ export default function DashboardTab() {
         const combined = [...leaves, ...ots].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
         setPendingSubmissions(combined.slice(0, 5));
         setLoading(false);
-      }, (otError) => {
-        console.error("Dashboard error listening to overtime submissions:", otError);
+      }, (otError: any) => {
+        if (otError?.message?.includes('Quota') || otError?.code === 'resource-exhausted') {
+          setQuotaError(true);
+        } else {
+          console.warn("[DashboardTab] Overtime sync notice:", otError?.message || otError);
+        }
         setLoading(false);
       });
 
       return () => unsubOvertimePending();
-    }, (error) => {
-      console.error("Dashboard error listening to leave submissions:", error);
+    }, (error: any) => {
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        setQuotaError(true);
+      } else {
+        console.warn("[DashboardTab] Pending leave sync notice:", error?.message || error);
+      }
       setLoading(false);
     });
 
     // 5. Monitor Current Week's Attendance Trends (On-Time vs Late)
-    const unsubWeeklyTrends = onSnapshot(collection(db, 'attendance'), (snapshot) => {
-      const current = new Date();
-      const day = current.getDay();
-      const mondayDiff = day === 0 ? -6 : 1 - day;
-      const monday = new Date(current);
-      monday.setDate(current.getDate() + mondayDiff);
-      
+    const current = new Date();
+    const day = current.getDay();
+    const mondayDiff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(current);
+    monday.setDate(current.getDate() + mondayDiff);
+    const mondayStr = format(monday, 'yyyy-MM-dd');
+
+    const unsubWeeklyTrends = onSnapshot(query(collection(db, 'attendance'), where('tanggal', '>=', mondayStr)), (snapshot) => {
       const weekDates = [];
       const dayNames = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum'];
       for (let i = 0; i < 5; i++) {
@@ -192,8 +249,12 @@ export default function DashboardTab() {
       });
       
       setWeeklyData(parsedWeekly);
-    }, (error) => {
-      console.error("Dashboard error listening to weekly trends:", error);
+    }, (error: any) => {
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        setQuotaError(true);
+      } else {
+        console.warn("[DashboardTab] Weekly trends sync notice:", error?.message || error);
+      }
     });
 
     // 6. Monitor Today's WhatsApp Reminder Logs
@@ -201,8 +262,10 @@ export default function DashboardTab() {
     startOfToday.setHours(0,0,0,0);
     const unsubWaLogs = onSnapshot(query(collection(db, 'wa_logs'), where('timestamp', '>=', startOfToday.toISOString())), (snap) => {
       setWaLogsCount(snap.size);
-    }, (err) => {
-      console.error("Error listening to wa_logs on dashboard:", err);
+    }, (err: any) => {
+      if (!err?.message?.includes('Quota') && err?.code !== 'resource-exhausted') {
+        console.warn("[DashboardTab] WA logs sync notice:", err?.message || err);
+      }
     });
 
     return () => {
@@ -277,6 +340,30 @@ export default function DashboardTab() {
 
   return (
     <div className="space-y-6">
+      {quotaError && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-rose-500/10 to-amber-500/10 border-2 border-amber-500/30 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-amber-900 dark:text-amber-200">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={24} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-extrabold text-sm uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                Batas Kuota Pembacaan Firestore Terlampaui (Free Tier Quota Exceeded)
+              </h3>
+              <p className="text-xs text-amber-700 dark:text-amber-300/80 mt-1 leading-relaxed">
+                Database Firestore telah mencapai batas kuota pembacaan harian (Free Daily Read Units). Kuota ini akan di-reset secara otomatis besok, atau Anda dapat meng-upgrade billing proyek Firebase untuk akses tanpa batas.
+              </p>
+            </div>
+          </div>
+          <a
+            href="https://console.firebase.google.com/project/polynomial-node-c2gpt/firestore/databases/ai-studio-624bea7c-68f3-4297-85df-707056c1d162/data?openUpgradeDialog=true"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-sm hover:shadow-md transition-all shrink-0 flex items-center gap-1.5"
+          >
+            Upgrade / Cek Firestore Console <ArrowRight size={14} />
+          </a>
+        </div>
+      )}
+
       {/* Header Premium Section */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
         <div>

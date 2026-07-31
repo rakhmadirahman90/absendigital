@@ -291,7 +291,15 @@ export default function CheckInOut() {
           setCheckingLocation(false);
         }
       } catch (err) {
-        console.error('Error loading settings:', err);
+        console.warn('Using default fallback office settings due to quota/network limit:', err);
+        const fallbackOffices: OfficeLocation[] = [{
+          id: 'default',
+          name: 'Kantor Pusat US BILIBILI 162',
+          latitude: -5.147665,
+          longitude: 119.432732,
+          radius: 500
+        }];
+        setOffices(fallbackOffices);
         setCheckingLocation(false);
       }
     };
@@ -565,6 +573,29 @@ export default function CheckInOut() {
         const msg = `Absen masuk berhasil (${status})`;
         setMessage(msg);
         toast.success(msg);
+
+        // Auto background sync to Google Sheets Database
+        getDoc(doc(db, 'settings', 'sheets_settings')).then(sheetsSnap => {
+          if (sheetsSnap.exists() && sheetsSnap.data().spreadsheetId) {
+            fetch('/api/sheets/append-attendance', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                spreadsheetId: sheetsSnap.data().spreadsheetId,
+                record: {
+                  tanggal: dateStr,
+                  user_waNumber: user.waNumber || user.uid,
+                  nama: user.nama || user.displayName || user.email || 'Karyawan',
+                  jam_masuk: timeStr,
+                  status: status,
+                  latitude_masuk: latitude,
+                  longitude_masuk: longitude,
+                  alamat_masuk: resolvedAddress
+                }
+              })
+            }).catch(e => console.warn('Background sheets sync notice:', e));
+          }
+        }).catch(() => {});
       } else {
         if (existing.empty) {
           throw new Error('Anda belum absen masuk hari ini');

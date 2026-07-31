@@ -73,7 +73,9 @@ export default function History() {
       setHistory(records);
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching attendance history: ", error);
+      if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+        console.warn("[History] Attendance sync notice:", error?.message || error);
+      }
       setLoading(false);
     });
 
@@ -87,7 +89,9 @@ export default function History() {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setLeaveRequests(records);
     }, (error) => {
-      console.error("Error fetching leave requests: ", error);
+      if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+        console.warn("[History] Leave sync notice:", error?.message || error);
+      }
     });
 
     // 3. Fetch Overtime Requests for Stat calculation
@@ -100,7 +104,9 @@ export default function History() {
       const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setOvertimeRequests(records);
     }, (error) => {
-      console.error("Error fetching overtime requests: ", error);
+      if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+        console.warn("[History] Overtime sync notice:", error?.message || error);
+      }
     });
 
     return () => {

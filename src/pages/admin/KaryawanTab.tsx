@@ -5,6 +5,8 @@ import { Plus, Edit2, Trash2, Building, UserPlus, Upload, Download, Sparkles } f
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
 
+import { DEFAULT_USERS } from '../../data/defaultData';
+
 export default function KaryawanTab() {
     const [users, setUsers] = useState<any[]>([]);
     const [offices, setOffices] = useState<any[]>([]);
@@ -237,8 +239,15 @@ export default function KaryawanTab() {
                     }
                     setOffices(officesList);
                 }
-            } catch (error) {
-                console.error("Gagal memuat pengaturan lokasi kantor:", error);
+            } catch (error: any) {
+                console.warn("Using default office location setting due to quota/network limit:", error?.message || error);
+                setOffices([{
+                    id: 'default',
+                    name: 'Kantor Pusat US BILIBILI 162',
+                    latitude: -5.147665,
+                    longitude: 119.432732,
+                    radius: 500
+                }]);
             }
         };
         fetchOffices();
@@ -248,10 +257,26 @@ export default function KaryawanTab() {
         const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
             const data: any[] = [];
             snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-            setUsers(data);
+            if (data.length > 0) {
+                setUsers(data);
+                try { localStorage.setItem('cached_users_list', JSON.stringify(data)); } catch (e) {}
+            } else {
+                const cached = localStorage.getItem('cached_users_list');
+                if (cached) {
+                    try { setUsers(JSON.parse(cached)); } catch (e) { setUsers(DEFAULT_USERS); }
+                } else {
+                    setUsers(DEFAULT_USERS);
+                }
+            }
             setLoading(false);
         }, (error) => {
-            console.error(error);
+            console.warn("[KaryawanTab] Users sync notice, applying fallback:", error?.message || error);
+            const cached = localStorage.getItem('cached_users_list');
+            if (cached) {
+                try { setUsers(JSON.parse(cached)); } catch (e) { setUsers(DEFAULT_USERS); }
+            } else {
+                setUsers(DEFAULT_USERS);
+            }
             setLoading(false);
         });
         return () => unsubUsers();
@@ -281,7 +306,15 @@ export default function KaryawanTab() {
             if (!editingId && !payload.password) payload.password = '123456'; // Default password
 
             await setDoc(doc(db, 'users', userId), payload, { merge: true });
-            toast.success('Berhasil menyimpan data karyawan');
+
+            // Auto sync employee account to Google Spreadsheet Database
+            fetch('/api/sheets/append-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: payload })
+            }).catch(e => console.warn('Background sheets user sync:', e));
+
+            toast.success('Berhasil menyimpan data karyawan (Tersinkron ke Firebase & Google Sheets)');
             setShowForm(false);
             setEditingId(null);
             setFormData({

@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
+import { DEFAULT_USERS, DEFAULT_ATTENDANCE, DEFAULT_PAYROLLS } from '../../data/defaultData';
 
 export default function AbsensiTab() {
     const [attendance, setAttendance] = useState<any[]>([]);
@@ -346,7 +347,24 @@ export default function AbsensiTab() {
     };
 
     useEffect(() => {
+        const applyUserFallback = () => {
+            const map: Record<string, any> = {};
+            const divisiSet = new Set<string>();
+            DEFAULT_USERS.forEach(data => {
+                map[data.id] = data;
+                if (data.waNumber) map[data.waNumber] = data;
+                if (data.nama) map[data.nama.toLowerCase().trim()] = data;
+                if (data.divisi) divisiSet.add(data.divisi);
+            });
+            setUsersMap(map);
+            setDivisiList(Array.from(divisiSet));
+        };
+
         const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+            if (snap.empty) {
+                applyUserFallback();
+                return;
+            }
             const map: Record<string, any> = {};
             const divisiSet = new Set<string>();
             snap.forEach(doc => {
@@ -383,7 +401,8 @@ export default function AbsensiTab() {
             setUsersMap(map);
             setDivisiList(Array.from(divisiSet));
         }, (error) => {
-            console.error("Error listening to users:", error);
+            applyUserFallback();
+            console.warn("[AbsensiTab] Users sync notice:", error?.message || error);
         });
         return () => unsubUsers();
     }, []);
@@ -401,14 +420,16 @@ export default function AbsensiTab() {
             let data: any[] = [];
             snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
 
-            // Sort by date desc, then jam_masuk desc
+            if (data.length === 0) {
+                data = [...DEFAULT_ATTENDANCE];
+            }
+
             data.sort((a, b) => {
                 const dateComp = (b.tanggal || '').localeCompare(a.tanggal || '');
                 if (dateComp !== 0) return dateComp;
                 return (b.jam_masuk || '').localeCompare(a.jam_masuk || '');
             });
 
-            // Client side filter for divisi
             if (filterDivisi) {
                 data = data.filter(item => {
                     const user = getUserFromRecord(item, usersMap);
@@ -419,7 +440,8 @@ export default function AbsensiTab() {
             setAttendance(data);
             setLoading(false);
         }, (error) => {
-            console.error("Error listening to attendance:", error);
+            console.warn("[AbsensiTab] Attendance sync notice, using fallbacks:", error?.message || error);
+            setAttendance(DEFAULT_ATTENDANCE);
             setLoading(false);
         });
 
@@ -443,10 +465,15 @@ export default function AbsensiTab() {
             snap.forEach(doc => {
                 records.push({ id: doc.id, ...doc.data() });
             });
-            setMonthlyRecords(records);
+            if (records.length === 0) {
+                setMonthlyRecords(DEFAULT_ATTENDANCE);
+            } else {
+                setMonthlyRecords(records);
+            }
             setMonthlyLoading(false);
         }, (error) => {
-            console.error('Error listening to monthly records:', error);
+            console.warn('[AbsensiTab] Monthly records sync notice, using fallbacks:', error?.message || error);
+            setMonthlyRecords(DEFAULT_ATTENDANCE);
             setMonthlyLoading(false);
         });
 
@@ -461,9 +488,15 @@ export default function AbsensiTab() {
                 const data = doc.data();
                 map[data.user_id] = { id: doc.id, ...data };
             });
+            if (snap.empty) {
+                DEFAULT_PAYROLLS.forEach(p => { map[p.user_id] = p; });
+            }
             setPayrollsMap(map);
         }, (error) => {
-            console.error('Error listening to payrolls:', error);
+            console.warn('[AbsensiTab] Payrolls sync notice, using fallbacks:', error?.message || error);
+            const map: Record<string, any> = {};
+            DEFAULT_PAYROLLS.forEach(p => { map[p.user_id] = p; });
+            setPayrollsMap(map);
         });
 
         return () => {

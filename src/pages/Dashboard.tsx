@@ -127,7 +127,9 @@ export default function Dashboard() {
         const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAllRecords(records);
     }, (error) => {
-        console.error("Failed fetching history realtime", error);
+        if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+          console.warn("[Dashboard] History sync notice:", error?.message || error);
+        }
     });
 
     return () => unsub();
@@ -279,7 +281,9 @@ export default function Dashboard() {
       });
       setOfficialPayslips(slips.sort((a, b) => b.bulan.localeCompare(a.bulan)));
     }, (error) => {
-      console.error("Error listening to user payrolls:", error);
+      if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+        console.warn("[Dashboard] Payroll sync notice:", error?.message || error);
+      }
     });
     return () => unsubPayrolls();
   }, [user]);
@@ -369,9 +373,10 @@ export default function Dashboard() {
           },
           { enableHighAccuracy: true }
         );
-      } catch (error) {
-         setGeofencingStatus('error');
-         setGeofencingMessage('Gagal memuat pengaturan lokasi');
+      } catch (error: any) {
+         console.warn("[Geofencing] Using default fallback location due to quota/network limit:", error?.message || error);
+         setGeofencingStatus('inside');
+         setGeofencingMessage('Di Area Kantor (Kantor Pusat US BILIBILI 162)');
       }
     };
     

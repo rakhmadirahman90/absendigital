@@ -8,6 +8,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import axios from "axios";
 import { initializeApp } from "firebase/app";
 import { initializeFirestore, collection, getDocs, query, where, addDoc, getDoc, doc, setDoc } from "firebase/firestore";
+import { google } from "googleapis";
 
 const app = express();
 app.use(cors());
@@ -958,6 +959,621 @@ app.post("/api/analyze-suspicious-request", async (req, res) => {
   }
 });
 
+// ==========================================
+// GOOGLE SHEETS SPREADSHEET DATABASE ENDPOINTS
+// ==========================================
+
+const getGoogleAuthClient = (accessToken?: string) => {
+  if (accessToken) {
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({ access_token: accessToken });
+    return oauth2Client;
+  }
+  return new google.auth.GoogleAuth({
+    scopes: [
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/drive.file'
+    ]
+  });
+};
+
+// 1. Create a new Google Spreadsheet on Drive with complete database structure
+app.post("/api/sheets/create-spreadsheet", async (req, res) => {
+  const { title, accessToken } = req.body;
+  const sheetTitle = title || "Database US BILIBILI HADIR 162";
+
+  try {
+    const auth = getGoogleAuthClient(accessToken);
+    const sheets = google.sheets({ version: "v4", auth });
+
+    const resource = {
+      properties: {
+        title: sheetTitle,
+      },
+      sheets: [
+        { properties: { title: "Daftar_Karyawan", gridProperties: { frozenRowCount: 1 } } },
+        { properties: { title: "Presensi_Harian", gridProperties: { frozenRowCount: 1 } } },
+        { properties: { title: "Pengajuan_Cuti_Lembur", gridProperties: { frozenRowCount: 1 } } },
+        { properties: { title: "Laporan_Gaji", gridProperties: { frozenRowCount: 1 } } },
+        { properties: { title: "Pengaturan_Sistem", gridProperties: { frozenRowCount: 1 } } },
+        { properties: { title: "Riwayat_Notifikasi", gridProperties: { frozenRowCount: 1 } } },
+        { properties: { title: "Log_WhatsApp", gridProperties: { frozenRowCount: 1 } } },
+        { properties: { title: "Koreksi_Presensi", gridProperties: { frozenRowCount: 1 } } },
+      ],
+    };
+
+    const spreadsheet = await sheets.spreadsheets.create({
+      requestBody: resource,
+    });
+
+    const spreadsheetId = spreadsheet.data.spreadsheetId;
+    const spreadsheetUrl = spreadsheet.data.spreadsheetUrl;
+
+    // Populate Headers for all 8 sheets
+    const headerData = [
+      {
+        range: "Daftar_Karyawan!A1:M1",
+        values: [["No WA", "Nama Karyawan", "Divisi", "Jabatan", "Role", "Tipe Gaji", "Gaji Per Jam (Rp)", "Gaji Per Bulan (Rp)", "Bonus Dryer (Rp)", "Password / PIN", "Metode Login", "Sistem Shift", "Tanggal Dibuat"]],
+      },
+      {
+        range: "Presensi_Harian!A1:O1",
+        values: [["ID Record", "Tanggal", "No WA", "Nama Karyawan", "Jam Masuk", "Jam Pulang", "Status", "Keterangan", "Is Lembur", "Dryer Menyala", "Total Jam Kerja", "Koordinat GPS", "Alamat Check-in", "Foto Masuk URL", "Foto Pulang URL"]],
+      },
+      {
+        range: "Pengajuan_Cuti_Lembur!A1:M1",
+        values: [["ID Pengajuan", "Tipe", "Nama Karyawan", "No WA", "Tanggal Mulai", "Tanggal Selesai", "Jam Mulai", "Jam Selesai", "Durasi", "Alasan / Keterangan", "Status Approval", "Catatan Admin", "Tanggal Dibuat"]],
+      },
+      {
+        range: "Laporan_Gaji!A1:P1",
+        values: [["Bulan / Periode", "No WA", "Nama Karyawan", "Divisi", "Jabatan", "Tipe Gaji", "Hari Hadir", "Jam Reguler", "Jam Lembur", "Gaji Dasar (Rp)", "Gaji Lembur (Rp)", "Tunjangan (Rp)", "Potongan (Rp)", "Total Gaji Bersih (Rp)", "Status Bayar", "Tanggal Slip"]],
+      },
+      {
+        range: "Pengaturan_Sistem!A1:E1",
+        values: [["Kategori Setting", "Nama Setting / Document ID", "Deskripsi / Nilai Konfigurasi", "Detail JSON Data", "Terakhir Diperbarui"]],
+      },
+      {
+        range: "Riwayat_Notifikasi!A1:G1",
+        values: [["ID Notifikasi", "Target User / WA", "Judul Notifikasi", "Pesan Notifikasi", "Tipe", "Status Dibaca", "Waktu Dibuat"]],
+      },
+      {
+        range: "Log_WhatsApp!A1:G1",
+        values: [["ID Log", "No WA Tujuan", "Nama Penerima", "Pesan WhatsApp", "Status Kirim", "Gateway Mode", "Waktu Kirim"]],
+      },
+      {
+        range: "Koreksi_Presensi!A1:H1",
+        values: [["ID Adjustment", "No WA Karyawan", "Tanggal", "Jam Masuk Baru", "Jam Pulang Baru", "Alasan Perubahan", "Disetujui Oleh", "Tanggal Diubah"]],
+      },
+    ];
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: spreadsheetId!,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: headerData,
+      },
+    });
+
+    writeLog(`Successfully created Google Spreadsheet Database ID: ${spreadsheetId}`);
+
+    return res.json({
+      success: true,
+      spreadsheetId,
+      spreadsheetUrl,
+      message: `Database Spreadsheet Lengkap "${sheetTitle}" berhasil dibuat di Google Drive!`,
+    });
+  } catch (error: any) {
+    console.error("Error creating Google Spreadsheet:", error);
+    writeLog(`Error creating Google Spreadsheet: ${error.message || error}`);
+    return res.status(500).json({
+      success: false,
+      error: "Gagal membuat Spreadsheet Google Drive: " + (error.message || String(error)),
+    });
+  }
+});
+
+// 2. Sync ALL Firestore Collections to Google Sheets
+app.post("/api/sheets/sync-all", async (req, res) => {
+  let { spreadsheetId, accessToken, employees, attendance, submissions, payrolls, settings, notifications, waLogs, adjustments } = req.body;
+
+  if (!spreadsheetId) {
+    return res.status(400).json({ success: false, error: "Spreadsheet ID wajib diisi." });
+  }
+
+  try {
+    const auth = getGoogleAuthClient(accessToken);
+    const sheets = google.sheets({ version: "v4", auth });
+
+    // Fallback/Supplement from Firestore backend if payload arrays are empty
+    let empList: any[] = Array.isArray(employees) ? employees : [];
+    let attList: any[] = Array.isArray(attendance) ? attendance : [];
+    let subList: any[] = Array.isArray(submissions) ? submissions : [];
+    let payList: any[] = Array.isArray(payrolls) ? payrolls : [];
+    let setList: any[] = Array.isArray(settings) ? settings : [];
+    let notifList: any[] = Array.isArray(notifications) ? notifications : [];
+    let waLogList: any[] = Array.isArray(waLogs) ? waLogs : [];
+    let adjList: any[] = Array.isArray(adjustments) ? adjustments : [];
+
+    if (db) {
+      if (empList.length === 0) {
+        try {
+          const snap = await getDocs(collection(db, 'users'));
+          snap.forEach(d => empList.push({ id: d.id, ...d.data() }));
+        } catch (e) {}
+      }
+      if (attList.length === 0) {
+        try {
+          const snap = await getDocs(collection(db, 'attendance'));
+          snap.forEach(d => attList.push({ id: d.id, ...d.data() }));
+        } catch (e) {}
+      }
+      if (subList.length === 0) {
+        try {
+          const leaveSnap = await getDocs(collection(db, 'leave_requests'));
+          leaveSnap.forEach(d => subList.push({ id: d.id, tipe: 'leave', ...d.data() }));
+          const overSnap = await getDocs(collection(db, 'overtime'));
+          overSnap.forEach(d => subList.push({ id: d.id, tipe: 'overtime', ...d.data() }));
+        } catch (e) {}
+      }
+      if (payList.length === 0) {
+        try {
+          const snap = await getDocs(collection(db, 'payrolls'));
+          snap.forEach(d => payList.push({ id: d.id, ...d.data() }));
+        } catch (e) {}
+      }
+      if (setList.length === 0) {
+        try {
+          const officeDoc = await getDoc(doc(db, 'settings', 'office_location'));
+          if (officeDoc.exists()) setList.push({ id: 'office_location', category: 'Lokasi Kantor', ...officeDoc.data() });
+          const waDoc = await getDoc(doc(db, 'settings', 'wa_settings'));
+          if (waDoc.exists()) setList.push({ id: 'wa_settings', category: 'WhatsApp Gateway', ...waDoc.data() });
+          const sheetsDoc = await getDoc(doc(db, 'settings', 'sheets_settings'));
+          if (sheetsDoc.exists()) setList.push({ id: 'sheets_settings', category: 'Spreadsheet', ...sheetsDoc.data() });
+          const payrollDoc = await getDoc(doc(db, 'settings', 'payroll_settings'));
+          if (payrollDoc.exists()) setList.push({ id: 'payroll_settings', category: 'Pengaturan Gaji', ...payrollDoc.data() });
+        } catch (e) {}
+      }
+      if (notifList.length === 0) {
+        try {
+          const snap = await getDocs(collection(db, 'notifications'));
+          snap.forEach(d => notifList.push({ id: d.id, ...d.data() }));
+        } catch (e) {}
+      }
+      if (waLogList.length === 0) {
+        try {
+          const snap = await getDocs(collection(db, 'wa_logs'));
+          snap.forEach(d => waLogList.push({ id: d.id, ...d.data() }));
+        } catch (e) {}
+      }
+      if (adjList.length === 0) {
+        try {
+          const snap = await getDocs(collection(db, 'attendance_adjustments'));
+          snap.forEach(d => adjList.push({ id: d.id, ...d.data() }));
+        } catch (e) {}
+      }
+    }
+
+    // Check existing sheets in Spreadsheet
+    const meta = await sheets.spreadsheets.get({ spreadsheetId });
+    const existingTitles = (meta.data.sheets || []).map(s => s.properties?.title).filter(Boolean);
+
+    const requiredSheets = [
+      "Daftar_Karyawan",
+      "Presensi_Harian",
+      "Pengajuan_Cuti_Lembur",
+      "Laporan_Gaji",
+      "Pengaturan_Sistem",
+      "Riwayat_Notifikasi",
+      "Log_WhatsApp",
+      "Koreksi_Presensi"
+    ];
+
+    const missingSheets = requiredSheets.filter(title => !existingTitles.includes(title));
+
+    if (missingSheets.length > 0) {
+      const addSheetRequests = missingSheets.map(title => ({
+        addSheet: {
+          properties: {
+            title,
+            gridProperties: { frozenRowCount: 1 }
+          }
+        }
+      }));
+
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests: addSheetRequests }
+      });
+    }
+
+    // Build Batch Data
+    const batchData: any[] = [
+      {
+        range: "Daftar_Karyawan!A1:M1",
+        values: [["No WA", "Nama Karyawan", "Divisi", "Jabatan", "Role", "Tipe Gaji", "Gaji Per Jam (Rp)", "Gaji Per Bulan (Rp)", "Bonus Dryer (Rp)", "Password / PIN", "Metode Login", "Sistem Shift", "Tanggal Dibuat"]],
+      },
+      {
+        range: "Presensi_Harian!A1:O1",
+        values: [["ID Record", "Tanggal", "No WA", "Nama Karyawan", "Jam Masuk", "Jam Pulang", "Status", "Keterangan", "Is Lembur", "Dryer Menyala", "Total Jam Kerja", "Koordinat GPS", "Alamat Check-in", "Foto Masuk URL", "Foto Pulang URL"]],
+      },
+      {
+        range: "Pengajuan_Cuti_Lembur!A1:M1",
+        values: [["ID Pengajuan", "Tipe", "Nama Karyawan", "No WA", "Tanggal Mulai", "Tanggal Selesai", "Jam Mulai", "Jam Selesai", "Durasi", "Alasan / Keterangan", "Status Approval", "Catatan Admin", "Tanggal Dibuat"]],
+      },
+      {
+        range: "Laporan_Gaji!A1:P1",
+        values: [["Bulan / Periode", "No WA", "Nama Karyawan", "Divisi", "Jabatan", "Tipe Gaji", "Hari Hadir", "Jam Reguler", "Jam Lembur", "Gaji Dasar (Rp)", "Gaji Lembur (Rp)", "Tunjangan (Rp)", "Potongan (Rp)", "Total Gaji Bersih (Rp)", "Status Bayar", "Tanggal Slip"]],
+      },
+      {
+        range: "Pengaturan_Sistem!A1:E1",
+        values: [["Kategori Setting", "Nama Setting / Document ID", "Deskripsi / Nilai Konfigurasi", "Detail JSON Data", "Terakhir Diperbarui"]],
+      },
+      {
+        range: "Riwayat_Notifikasi!A1:G1",
+        values: [["ID Notifikasi", "Target User / WA", "Judul Notifikasi", "Pesan Notifikasi", "Tipe", "Status Dibaca", "Waktu Dibuat"]],
+      },
+      {
+        range: "Log_WhatsApp!A1:G1",
+        values: [["ID Log", "No WA Tujuan", "Nama Penerima", "Pesan WhatsApp", "Status Kirim", "Gateway Mode", "Waktu Kirim"]],
+      },
+      {
+        range: "Koreksi_Presensi!A1:H1",
+        values: [["ID Adjustment", "No WA Karyawan", "Tanggal", "Jam Masuk Baru", "Jam Pulang Baru", "Alasan Perubahan", "Disetujui Oleh", "Tanggal Diubah"]],
+      },
+    ];
+
+    // 1. Employees
+    if (empList.length > 0) {
+      const rows = empList.map((e: any) => [
+        e.waNumber || e.id || "-",
+        e.nama || "-",
+        e.divisi || "-",
+        e.jabatan || "-",
+        e.role || "karyawan",
+        e.gaji_type || "per_jam",
+        e.gaji_per_jam || 0,
+        e.gaji_bulanan || 0,
+        e.bonus_dryer_amount || e.bonus_dryer_1 || 0,
+        e.password || e.pin || "******",
+        e.loginMethod || "password",
+        e.shift_system || e.assignedOfficeId || "semua",
+        e.created_at || e.createdAt || new Date().toISOString().split('T')[0]
+      ]);
+      batchData.push({
+        range: `Daftar_Karyawan!A2:M${rows.length + 10}`,
+        values: rows
+      });
+    }
+
+    // 2. Attendance
+    if (attList.length > 0) {
+      const rows = attList.map((a: any) => [
+        a.id || "-",
+        a.tanggal || "-",
+        a.user_waNumber || a.waNumber || a.user_id || "-",
+        a.nama || a.user_nama || "-",
+        a.jam_masuk || "-",
+        a.jam_pulang || "-",
+        a.status || "Hadir",
+        a.keterangan || a.catatan || "-",
+        a.is_lembur ? "Ya" : "Tidak",
+        a.dryer_menyala ? "Ya" : "Tidak",
+        a.total_jam_kerja || a.durasi_kerja || "-",
+        a.latitude_masuk ? `${a.latitude_masuk}, ${a.longitude_masuk}` : "-",
+        a.alamat_masuk || a.alamat_pulang || "-",
+        a.foto_masuk ? (a.foto_masuk.startsWith('data:') ? '[Foto Base64]' : a.foto_masuk) : "-",
+        a.foto_pulang ? (a.foto_pulang.startsWith('data:') ? '[Foto Base64]' : a.foto_pulang) : "-"
+      ]);
+      batchData.push({
+        range: `Presensi_Harian!A2:O${rows.length + 10}`,
+        values: rows
+      });
+    }
+
+    // 3. Submissions
+    if (subList.length > 0) {
+      const rows = subList.map((s: any) => [
+        s.id || "-",
+        s.tipe || s.type || "izin",
+        s.nama || s.employeeName || s.user_nama || "-",
+        s.waNumber || s.user_waNumber || s.user_id || "-",
+        s.tanggal_mulai || s.tanggal || "-",
+        s.tanggal_akhir || s.tanggal || "-",
+        s.jam_mulai || "-",
+        s.jam_selesai || "-",
+        s.durasi_hari ? `${s.durasi_hari} Hari` : (s.durasi_jam ? `${s.durasi_jam} Jam` : "-"),
+        s.alasan || s.keterangan || "-",
+        s.status || "pending",
+        s.admin_note || s.catatan_admin || "-",
+        s.created_at || s.createdAt || "-"
+      ]);
+      batchData.push({
+        range: `Pengajuan_Cuti_Lembur!A2:M${rows.length + 10}`,
+        values: rows
+      });
+    }
+
+    // 4. Payrolls
+    if (payList.length > 0) {
+      const rows = payList.map((p: any) => [
+        p.bulan || p.periode || "-",
+        p.employee?.waNumber || p.waNumber || p.user_id || "-",
+        p.employee?.nama || p.nama || "-",
+        p.employee?.divisi || p.divisi || "-",
+        p.employee?.jabatan || p.jabatan || "-",
+        p.employee?.gaji_type || p.gaji_type || "-",
+        p.daysPresent || p.total_hadir || 0,
+        p.totalRegularHours || p.total_jam_reguler || 0,
+        p.totalLemburHours || p.total_jam_lembur || 0,
+        p.basePay || p.totalRegPay || 0,
+        p.totalLemburPay || 0,
+        p.totalTunjangan || 0,
+        p.totalPotongan || 0,
+        p.grandTotalSalary || p.total_gaji || 0,
+        p.status || "terbayar",
+        p.created_at || p.updated_at || "-"
+      ]);
+      batchData.push({
+        range: `Laporan_Gaji!A2:P${rows.length + 10}`,
+        values: rows
+      });
+    }
+
+    // 5. Settings
+    if (setList.length > 0) {
+      const rows = setList.map((s: any) => [
+        s.category || "Setting Sistem",
+        s.id || s.name || "-",
+        s.description || (s.id === 'office_location' ? `Radius Office ${s.radius || 100}m` : "-"),
+        JSON.stringify(s),
+        s.updated_at || s.lastSyncedAt || new Date().toISOString()
+      ]);
+      batchData.push({
+        range: `Pengaturan_Sistem!A2:E${rows.length + 10}`,
+        values: rows
+      });
+    }
+
+    // 6. Notifications
+    if (notifList.length > 0) {
+      const rows = notifList.map((n: any) => [
+        n.id || "-",
+        n.target_user_id || n.waNumber || "Semua Karyawan",
+        n.title || n.judul || "-",
+        n.message || n.pesan || "-",
+        n.type || n.tipe || "info",
+        n.read ? "Sudah Dibaca" : "Belum Dibaca",
+        n.created_at || n.timestamp || "-"
+      ]);
+      batchData.push({
+        range: `Riwayat_Notifikasi!A2:G${rows.length + 10}`,
+        values: rows
+      });
+    }
+
+    // 7. WhatsApp Logs
+    if (waLogList.length > 0) {
+      const rows = waLogList.map((w: any) => [
+        w.id || "-",
+        w.waNumber || w.to || "-",
+        w.nama || w.recipient || "-",
+        w.message || w.pesan || "-",
+        w.status || "sent",
+        w.mode || "fonnte/wavio",
+        w.timestamp || w.created_at || "-"
+      ]);
+      batchData.push({
+        range: `Log_WhatsApp!A2:G${rows.length + 10}`,
+        values: rows
+      });
+    }
+
+    // 8. Adjustments
+    if (adjList.length > 0) {
+      const rows = adjList.map((j: any) => [
+        j.id || "-",
+        j.waNumber || j.user_id || "-",
+        j.tanggal || "-",
+        j.jam_masuk_baru || j.jam_masuk || "-",
+        j.jam_pulang_baru || j.jam_pulang || "-",
+        j.alasan || j.keterangan || "-",
+        j.approved_by || j.admin_name || "-",
+        j.updated_at || j.created_at || "-"
+      ]);
+      batchData.push({
+        range: `Koreksi_Presensi!A2:H${rows.length + 10}`,
+        values: rows
+      });
+    }
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: batchData,
+      },
+    });
+
+    writeLog(`Successfully synced ALL 8 Firestore collections to Google Spreadsheet ID: ${spreadsheetId}`);
+
+    return res.json({
+      success: true,
+      message: "Seluruh data Firebase (8 Kategori Database) berhasil disinkronkan tanpa ada yang tertinggal ke Google Spreadsheet!",
+      syncedCount: {
+        employees: empList.length,
+        attendance: attList.length,
+        submissions: subList.length,
+        payrolls: payList.length,
+        settings: setList.length,
+        notifications: notifList.length,
+        waLogs: waLogList.length,
+        adjustments: adjList.length
+      },
+    });
+  } catch (error: any) {
+    console.error("Error syncing to Google Spreadsheet:", error);
+    writeLog(`Error syncing to Google Spreadsheet: ${error.message || error}`);
+    return res.status(500).json({
+      success: false,
+      error: "Gagal menyinkronkan data ke Google Spreadsheet: " + (error.message || String(error)),
+    });
+  }
+});
+
+// 3. Append single Attendance record live
+app.post("/api/sheets/append-attendance", async (req, res) => {
+  const { spreadsheetId, accessToken, record } = req.body;
+  if (!spreadsheetId || !record) {
+    return res.status(400).json({ success: false, error: "spreadsheetId and record are required." });
+  }
+
+  try {
+    const auth = getGoogleAuthClient(accessToken);
+    const sheets = google.sheets({ version: "v4", auth });
+
+    const row = [
+      record.id || `att-${Date.now()}`,
+      record.tanggal || new Date().toISOString().split("T")[0],
+      record.user_waNumber || record.user_id || "-",
+      record.nama || record.user_nama || "-",
+      record.jam_masuk || "-",
+      record.jam_pulang || "-",
+      record.status || "Hadir",
+      record.latitude_masuk ? `${record.latitude_masuk}, ${record.longitude_masuk}` : "-",
+      record.alamat_masuk || "-",
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: "Presensi_Harian!A:I",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [row],
+      },
+    });
+
+    return res.json({ success: true, message: "Absen tercatat otomatis di Google Spreadsheet Database!" });
+  } catch (error: any) {
+    console.error("Error appending attendance to Google Sheets:", error);
+    return res.status(500).json({ success: false, error: error.message || String(error) });
+  }
+});
+
+// 4. Lookup user from Google Sheets Database by WA Number
+app.post("/api/sheets/get-user", async (req, res) => {
+  let { spreadsheetId, waNumber, accessToken } = req.body;
+  
+  if (!waNumber) {
+    return res.status(400).json({ success: false, error: "waNumber is required." });
+  }
+
+  const cleanWa = String(waNumber).replace(/\D/g, '');
+
+  try {
+    // If spreadsheetId is not provided, try to fetch from Firestore settings
+    if (!spreadsheetId && db) {
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'sheets_settings'));
+        if (snap.exists()) {
+          spreadsheetId = snap.data().spreadsheetId;
+        }
+      } catch (e: any) {
+        if (e?.message?.includes('Quota') || e?.code === 'resource-exhausted') {
+          console.warn("[Sheets Settings] Firestore quota limit reached when fetching sheets_settings.");
+        } else {
+          console.warn("Could not read sheets_settings from Firestore:", e?.message || String(e));
+        }
+      }
+    }
+
+    if (!spreadsheetId) {
+      return res.status(400).json({ success: false, found: false, error: "Spreadsheet ID belum dikonfigurasi." });
+    }
+
+    const auth = getGoogleAuthClient(accessToken);
+    const sheets = google.sheets({ version: "v4", auth });
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "Daftar_Karyawan!A2:G500",
+    });
+
+    const rows = response.data.values || [];
+    for (const row of rows) {
+      const rowWa = String(row[0] || '').replace(/\D/g, '');
+      if (rowWa === cleanWa) {
+        const user = {
+          uid: `wa-${rowWa}`,
+          waNumber: rowWa,
+          nama: row[1] || `Karyawan ${rowWa}`,
+          divisi: row[2] || 'General',
+          jabatan: row[3] || 'Staff',
+          role: row[4] || (rowWa === '081234567890' ? 'admin' : 'karyawan'),
+          gaji_type: row[5] || 'per_jam',
+          password: row[6] || '123456',
+        };
+        return res.json({ success: true, found: true, user });
+      }
+    }
+
+    return res.json({ success: true, found: false, message: "Karyawan tidak ditemukan di Google Spreadsheet." });
+  } catch (error: any) {
+    console.error("Error looking up user in Google Sheets:", error);
+    return res.status(500).json({ success: false, found: false, error: error.message || String(error) });
+  }
+});
+
+// 5. Append or update user in Google Sheets Database
+app.post("/api/sheets/append-user", async (req, res) => {
+  let { spreadsheetId, user, accessToken } = req.body;
+  if (!user || !user.waNumber) {
+    return res.status(400).json({ success: false, error: "user object with waNumber is required." });
+  }
+
+  const cleanWa = String(user.waNumber).replace(/\D/g, '');
+
+  try {
+    if (!spreadsheetId && db) {
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'sheets_settings'));
+        if (snap.exists()) {
+          spreadsheetId = snap.data().spreadsheetId;
+        }
+      } catch (e) {}
+    }
+
+    if (!spreadsheetId) {
+      return res.status(400).json({ success: false, error: "Spreadsheet ID belum dikonfigurasi." });
+    }
+
+    const auth = getGoogleAuthClient(accessToken);
+    const sheets = google.sheets({ version: "v4", auth });
+
+    const row = [
+      cleanWa,
+      user.nama || "-",
+      user.divisi || "General",
+      user.jabatan || "Staff",
+      user.role || "karyawan",
+      user.gaji_type || "per_jam",
+      user.password || user.pin || "123456",
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: "Daftar_Karyawan!A:G",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [row],
+      },
+    });
+
+    return res.json({ success: true, message: "User berhasil ditambahkan ke Google Spreadsheet Database!" });
+  } catch (error: any) {
+    console.error("Error appending user to Google Sheets:", error);
+    return res.status(500).json({ success: false, error: error.message || String(error) });
+  }
+});
+
 app.post("/api/send-wa", async (req, res) => {
   const { waNumber, message, apiMode, apiToken } = req.body;
 
@@ -1073,10 +1689,12 @@ if (fs.existsSync(configPath)) {
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     const firebaseApp = initializeApp(config);
+    const dbId = config.firestoreDatabaseId || "ai-studio-624bea7c-68f3-4297-85df-707056c1d162";
     db = initializeFirestore(firebaseApp, {
       experimentalForceLongPolling: true,
-    }, config.firestoreDatabaseId);
-    console.log("[Firebase Server-Side] Initialized successfully");
+      useFetchStreams: false,
+    } as any, dbId);
+    console.log(`[Firebase Server-Side] Initialized successfully with Database ID: ${dbId}`);
   } catch (err) {
     console.error("[Firebase Server-Side] Failed to initialize:", err);
   }
@@ -1550,7 +2168,13 @@ async function checkAndRunScheduler() {
     
     console.log(`[WA Scheduler] Trigger ${triggerId} processed. Dispatched: ${countDispatched}`);
   } catch (err: any) {
-    console.error("[WA Scheduler] Error executing scheduler:", err);
+    if (err?.message?.includes('Quota') || err?.code === 'resource-exhausted') {
+      console.warn("[WA Scheduler] Firestore quota limit reached. Pausing scheduled check until quota resets.");
+    } else if (err?.message?.includes('offline') || err?.code === 'unavailable' || err?.message?.includes('NOT_FOUND')) {
+      console.warn("[WA Scheduler] Firestore connection offline or reconnecting. Will retry next interval.");
+    } else {
+      console.error("[WA Scheduler] Error executing scheduler:", err?.message || String(err));
+    }
   }
 }
 
@@ -1591,8 +2215,12 @@ async function startServer() {
           eveningTemplate: existingData.eveningTemplate || 'Halo *{nama}*, jangan lupa untuk melakukan presensi PULANG hari ini pada jam {jam} WITA melalui aplikasi US BILIBILI HADIR 162. Selamat istirahat dan hati-hati di jalan! 🏠🚗'
         }, { merge: true });
         console.log("[WA Scheduler] Fonnte API settings loaded/auto-seeded successfully.");
-      } catch (err) {
-        console.error("[WA Scheduler] Failed to auto-seed Fonnte settings:", err);
+      } catch (err: any) {
+        if (err?.message?.includes('Quota') || err?.code === 'resource-exhausted') {
+          console.warn("[WA Scheduler] Firestore quota limit reached during auto-seed. Deferred until quota resets.");
+        } else {
+          console.error("[WA Scheduler] Failed to auto-seed Fonnte settings:", err);
+        }
       }
 
       console.log("[WA Scheduler] Starting automated background checker...");

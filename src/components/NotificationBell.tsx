@@ -39,7 +39,9 @@ export default function NotificationBell() {
       list.sort((a, b) => b.created_time - a.created_time);
       setNotifications(list);
     }, (error) => {
-      console.error("Gagal mendengarkan notifikasi:", error);
+      if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+        console.warn("[NotificationBell] Notification listener notice:", error?.message || error);
+      }
     });
 
     return () => unsubscribe();

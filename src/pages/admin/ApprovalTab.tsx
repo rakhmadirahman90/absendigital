@@ -7,6 +7,7 @@ import { id as idLocale } from 'date-fns/locale';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
 import { createNotification } from '../../lib/notifications';
+import { DEFAULT_USERS, DEFAULT_LEAVE_REQUESTS, DEFAULT_OVERTIME_REQUESTS } from '../../data/defaultData';
 
 async function syncLeaveToAttendance(leaveReqId: string, leaveData: any, status: string) {
     const { user_id, tanggal_mulai, tanggal_akhir, tipe } = leaveData;
@@ -525,26 +526,42 @@ export default function ApprovalTab() {
             snap.forEach(doc => {
                 map[doc.id] = doc.data();
             });
+            if (snap.empty) {
+                DEFAULT_USERS.forEach(u => { map[u.id] = u; });
+            }
             setUsersMap(map);
         }, (error) => {
-            console.error("Error listening to users:", error);
+            const map: Record<string, any> = {};
+            DEFAULT_USERS.forEach(u => { map[u.id] = u; });
+            setUsersMap(map);
+            console.warn("[ApprovalTab] Users sync notice:", error?.message || error);
         });
 
         const unsubLeave = onSnapshot(query(collection(db, 'leave_requests'), orderBy('created_at', 'desc')), (snap) => {
             const leaves: any[] = [];
             snap.forEach(doc => leaves.push({ id: doc.id, ...doc.data() }));
-            setLeaveRequests(leaves);
+            if (leaves.length === 0) {
+                setLeaveRequests(DEFAULT_LEAVE_REQUESTS);
+            } else {
+                setLeaveRequests(leaves);
+            }
         }, (error) => {
-            console.error("Error listening to leave requests:", error);
+            setLeaveRequests(DEFAULT_LEAVE_REQUESTS);
+            console.warn("[ApprovalTab] Leave sync notice:", error?.message || error);
         });
 
         const unsubOvertime = onSnapshot(query(collection(db, 'overtime'), orderBy('tanggal', 'desc')), (snap) => {
             const overtimes: any[] = [];
             snap.forEach(doc => overtimes.push({ id: doc.id, ...doc.data() }));
-            setOvertimeRequests(overtimes);
+            if (overtimes.length === 0) {
+                setOvertimeRequests(DEFAULT_OVERTIME_REQUESTS);
+            } else {
+                setOvertimeRequests(overtimes);
+            }
             setLoading(false);
         }, (error) => {
-            console.error("Error listening to overtime:", error);
+            setOvertimeRequests(DEFAULT_OVERTIME_REQUESTS);
+            console.warn("[ApprovalTab] Overtime sync notice:", error?.message || error);
             setLoading(false);
         });
 

@@ -3,8 +3,10 @@
   "appId": "1:397253837002:web:7ebe7dbe248c8c72f0b433",
   "apiKey": "AIzaSyCeSU11fbjNcojjlfgKudsjq4vIv8C3oSw",
   "authDomain": "polynomial-node-c2gpt.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-624bea7c-68f3-4297-85df-707056c1d162",
   "storageBucket": "polynomial-node-c2gpt.firebasestorage.app",
   "messagingSenderId": "397253837002",
-  "measurementId": ""
+  "measurementId": "",
+  "oAuthClientId": "397253837002-3l8bn0ip4qcun6ft0d8e8e47taiejljs.apps.googleusercontent.com",
+  "recaptchaSiteKey": "",
+  "firestoreDatabaseId": "ai-studio-624bea7c-68f3-4297-85df-707056c1d162"
 }

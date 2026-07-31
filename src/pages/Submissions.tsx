@@ -70,7 +70,9 @@ export default function Submissions() {
       const leaves = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setLeaveSubmissions(leaves);
     }, (error) => {
-      console.error("Error fetching leave requests:", error);
+      if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+        console.warn("[Submissions] Leave sync notice:", error?.message || error);
+      }
     });
 
     // Overtime queries
@@ -90,7 +92,9 @@ export default function Submissions() {
       setOvertimeSubmissions(overtimes);
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching overtime requests:", error);
+      if (!error?.message?.includes('Quota') && (error as any)?.code !== 'resource-exhausted') {
+        console.warn("[Submissions] Overtime sync notice:", error?.message || error);
+      }
       setLoading(false);
     });
 
