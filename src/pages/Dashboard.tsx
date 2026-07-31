@@ -7,6 +7,7 @@ import { auth, db } from '../lib/firebase';
 import { calculateAutoBreakHours } from '../lib/utils';
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { getLocalAttendanceRecords } from '../lib/localStorageAttendance';
+import { registerBiometricCredential, checkBiometricSupport } from '../lib/webauthn';
 import RealTimeClock from '../components/RealTimeClock';
 import { toast } from 'react-hot-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -68,7 +69,7 @@ export default function Dashboard() {
   const [editNama, setEditNama] = useState('');
   const [editWaNumber, setEditWaNumber] = useState('');
   const [editPassword, setEditPassword] = useState('');
-  const [editLoginMethod, setEditLoginMethod] = useState<'password' | 'pin'>('password');
+  const [editLoginMethod, setEditLoginMethod] = useState<'password' | 'pin' | 'biometric'>('password');
   const [editPin, setEditPin] = useState('');
   const [updating, setUpdating] = useState(false);
 
@@ -431,14 +432,32 @@ export default function Dashboard() {
           return;
         }
         updateData.pin = editPin;
+      } else if (editLoginMethod === 'biometric') {
+        const bioInfo = await checkBiometricSupport();
+        if (!bioInfo.isSupported) {
+          toast.error(bioInfo.message || 'Perangkat tidak mendukung biometrik.');
+          setUpdating(false);
+          return;
+        }
+        
+        toast.loading('Membuka sensor Biometrik/Passkey...', { id: 'bio-profile-toast' });
+        const bioResult = await registerBiometricCredential(
+          user.uid,
+          editWaNumber.trim(),
+          editNama.trim()
+        );
+
+        updateData.biometricCredentialId = bioResult.credentialId;
+        updateData.biometricRawId = bioResult.rawId;
+        toast.success('Biometrik (Sidik Jari / Wajah) terdaftar!', { id: 'bio-profile-toast' });
       }
 
       await updateDoc(userDocRef, updateData);
       toast.success('Profil Anda berhasil diperbarui!');
       setIsEditing(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating profile:', error);
-      toast.error('Gagal memperbarui profil. Silakan coba lagi.');
+      toast.error(error?.message || 'Gagal memperbarui profil. Silakan coba lagi.');
     } finally {
       setUpdating(false);
     }
@@ -1151,7 +1170,7 @@ export default function Dashboard() {
             <div className={`p-4 rounded-xl border transition-all ${themeFieldBg} ${isDaytime ? 'border-slate-100' : 'border-slate-800/85'}`}>
               <span className="text-xs text-slate-400 font-medium block mb-1">Preferensi Login Utama</span>
               <span className={`text-sm font-semibold ${themeTextVal}`}>
-                {dbUser.loginMethod === 'pin' ? 'PIN 6-Digit (Aktif)' : 'Kata Sandi Teks'}
+                {dbUser.loginMethod === 'biometric' ? 'Biometrik / Passkey (Aktif)' : dbUser.loginMethod === 'pin' ? 'PIN 6-Digit (Aktif)' : 'Kata Sandi Teks'}
               </span>
             </div>
           </div>
@@ -1208,11 +1227,12 @@ export default function Dashboard() {
                   <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${themeTextLabel}`}>Metode Login Utama</label>
                   <select
                     value={editLoginMethod}
-                    onChange={(e) => setEditLoginMethod(e.target.value as 'password' | 'pin')}
+                    onChange={(e) => setEditLoginMethod(e.target.value as 'password' | 'pin' | 'biometric')}
                     className={`w-full px-4 py-2.5 rounded-xl outline-none text-sm font-medium transition-all border ${themeInputBg}`}
                   >
                     <option value="password">Kata Sandi Teks</option>
                     <option value="pin">PIN 6-Digit</option>
+                    <option value="biometric">Biometrik (Sidik Jari / Wajah)</option>
                   </select>
                 </div>
                 {editLoginMethod === 'pin' && (

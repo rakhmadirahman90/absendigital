@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import AppLogo from '../components/AppLogo';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 import { DEFAULT_USERS } from '../data/defaultData';
+import { authenticateBiometricCredential, checkBiometricSupport, isInIframe } from '../lib/webauthn';
 import { 
   Building2, 
   Smartphone, 
@@ -23,7 +24,9 @@ import {
   Cpu,
   BadgeCheck,
   X,
-  Keyboard
+  Keyboard,
+  Fingerprint,
+  ScanFace
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -39,9 +42,39 @@ export default function Login() {
   const { user, login } = useAuth();
 
   // Step-by-step Login preferences state
-  const [loginStep, setLoginStep] = useState<'input_wa' | 'password' | 'pin'>('input_wa');
+  const [loginStep, setLoginStep] = useState<'input_wa' | 'password' | 'pin' | 'biometric'>('input_wa');
   const [pin, setPin] = useState('');
   const [detectedUser, setDetectedUser] = useState<any>(null);
+
+  const handleBiometricLogin = async (targetUserParam?: any) => {
+    const target = targetUserParam || detectedUser;
+    if (!target) return;
+
+    setError('');
+    setLoading(true);
+    try {
+      const bioInfo = await checkBiometricSupport();
+      if (!bioInfo.isSupported) {
+        throw new Error(bioInfo.message || 'Perangkat tidak mendukung biometrik.');
+      }
+
+      toast.loading('Membuka sensor Biometrik/Passkey...', { id: 'bio-auth-toast' });
+      const credId = target.biometricCredentialId || localStorage.getItem(`biometric_cred_${target.uid}`) || undefined;
+      
+      const result = await authenticateBiometricCredential(credId);
+      if (result.success) {
+        toast.success(`Biometrik Terverifikasi! Selamat datang kembali, ${target.nama || 'Karyawan'}!`, { id: 'bio-auth-toast' });
+        login({ uid: target.uid, ...target });
+      }
+    } catch (err: any) {
+      console.error('Biometric auth failed:', err);
+      const msg = err.message || 'Verifikasi Biometrik gagal.';
+      setError(msg);
+      toast.error(msg, { id: 'bio-auth-toast' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Keyboard listener for PIN entry
   useEffect(() => {
@@ -243,7 +276,17 @@ export default function Login() {
 
             setDetectedUser(userData);
 
-            if (userData.loginMethod === 'pin' && userData.pin) {
+            if (userData.loginMethod === 'biometric' || userData.biometricCredentialId) {
+               setLoginStep('biometric');
+               if (!isInIframe()) {
+                 toast.success('Nomor dikenali. Silakan verifikasi Biometrik (Sidik Jari / Wajah).');
+                 setTimeout(() => {
+                   handleBiometricLogin(userData);
+                 }, 200);
+               } else {
+                 toast.success('Nomor dikenali. Silakan Scan Biometrik atau Buka di Tab Baru.');
+               }
+            } else if (userData.loginMethod === 'pin' && userData.pin) {
                setLoginStep('pin');
                toast.success('Nomor dikenali. Silakan masukkan PIN 6-Digit Anda.');
             } else {
@@ -504,16 +547,111 @@ export default function Login() {
                     </div>
                   </div>
 
-                  {/* Option to use PIN if user has configured one */}
-                  {detectedUser?.pin && (
+                  {/* Option to use PIN or Biometrics */}
+                  <div className="space-y-1.5 pt-1">
                     <button
                       type="button"
-                      onClick={() => setLoginStep('pin')}
-                      className="w-full text-center text-xs text-blue-600 hover:text-blue-700 font-bold py-1.5 transition-colors block"
+                      onClick={() => {
+                        setLoginStep('biometric');
+                        handleBiometricLogin();
+                      }}
+                      className="w-full text-center text-xs text-indigo-600 hover:text-indigo-700 font-extrabold py-1.5 transition-colors flex items-center justify-center gap-1.5 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-100 rounded-xl"
                     >
-                      Masuk menggunakan PIN 6-Digit
+                      <Fingerprint size={15} />
+                      <span>Masuk dengan Biometrik (Sidik Jari / Wajah)</span>
                     </button>
-                  )}
+
+                    {detectedUser?.pin && (
+                      <button
+                        type="button"
+                        onClick={() => setLoginStep('pin')}
+                        className="w-full text-center text-xs text-blue-600 hover:text-blue-700 font-bold py-1.5 transition-colors block"
+                      >
+                        Masuk menggunakan PIN 6-Digit
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {loginStep === 'biometric' && (
+                <div className="space-y-5">
+                  {/* Read-only WA Badge */}
+                  <div className="bg-indigo-50/80 border border-indigo-100 rounded-2xl p-3 flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <Smartphone size={16} className="text-indigo-600" />
+                      <span className="text-sm font-mono font-bold text-slate-800">{waNumber}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginStep('input_wa');
+                        setDetectedUser(null);
+                      }}
+                      className="text-xs text-indigo-600 hover:text-indigo-700 font-bold transition-all"
+                    >
+                      Ubah Nomor
+                    </button>
+                  </div>
+
+                  {/* Biometric Animation Graphic */}
+                  <div className="text-center py-5 px-3 bg-gradient-to-br from-indigo-50/60 via-sky-50/30 to-blue-50/60 rounded-3xl border border-indigo-100/80 shadow-inner">
+                    <div className="relative inline-flex items-center justify-center mb-3">
+                      <div className="w-20 h-20 bg-indigo-100/80 rounded-full flex items-center justify-center animate-ping absolute inset-0 opacity-25" />
+                      <div className="w-20 h-20 bg-gradient-to-tr from-indigo-600 via-blue-600 to-sky-500 text-white rounded-full flex items-center justify-center shadow-lg shadow-indigo-500/30 relative z-10">
+                        <Fingerprint size={42} className="animate-pulse" />
+                      </div>
+                    </div>
+
+                    <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
+                      Verifikasi Biometrik (Passkey)
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
+                      Pindai sidik jari atau gunakan Face ID pada perangkat Anda untuk masuk.
+                    </p>
+
+                    {/* Trigger Buttons */}
+                    <div className="mt-4 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleBiometricLogin()}
+                        disabled={loading}
+                        className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-indigo-500/20 active:scale-95 transition-all inline-flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Fingerprint size={16} />
+                        <span>Scan Sidik Jari / Wajah Sekarang</span>
+                      </button>
+
+                      <a
+                        href={window.location.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all inline-flex items-center justify-center gap-1.5"
+                      >
+                        <span>🌐 Buka di Tab Baru (Untuk Sensor HP/Laptop)</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Alternative login method options */}
+                  <div className="flex flex-col gap-2 pt-2 border-t border-slate-100 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setLoginStep('password')}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-bold py-1 transition-colors"
+                    >
+                      Gunakan Kata Sandi Teks
+                    </button>
+                    {detectedUser?.pin && (
+                      <button
+                        type="button"
+                        onClick={() => setLoginStep('pin')}
+                        className="text-xs text-slate-500 hover:text-slate-800 font-bold py-1 transition-colors"
+                      >
+                        Gunakan PIN 6-Digit
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -641,9 +779,21 @@ export default function Login() {
                 </div>
               </div>
             ) : (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-3.5 rounded-2xl flex items-start gap-2 font-mono shadow-sm">
-                <span className="mt-0.5">⚠️</span>
-                <span>{error}</span>
+              <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-3.5 rounded-2xl flex flex-col gap-2 font-mono shadow-sm">
+                <div className="flex items-start gap-2">
+                  <span className="mt-0.5">⚠️</span>
+                  <span>{error}</span>
+                </div>
+                {(error.includes('Tab Baru') || error.includes('iFrame') || error.includes('Biometrik')) && (
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="self-start text-[11px] bg-red-100 hover:bg-red-200 text-red-800 font-extrabold px-3 py-1 rounded-lg underline transition-colors"
+                  >
+                    Buka Aplikasi di Tab Baru ↗
+                  </a>
+                )}
               </div>
             )
           )}

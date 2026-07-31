@@ -3,11 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
+import { registerBiometricCredential, checkBiometricSupport } from '../lib/webauthn';
 import AppLogo from '../components/AppLogo';
 import { 
   Shield, 
   Lock, 
   Smartphone, 
+  Fingerprint,
+  ScanFace,
   ArrowRight, 
   ArrowLeft, 
   Check, 
@@ -99,6 +102,40 @@ export default function LoginPreference() {
     }
   };
 
+  const saveBiometricPreference = async () => {
+    setLoading(true);
+    try {
+      const bioInfo = await checkBiometricSupport();
+      if (!bioInfo.isSupported) {
+        toast.error(bioInfo.message || 'Perangkat tidak mendukung biometrik.');
+        setLoading(false);
+        return;
+      }
+
+      toast.loading('Membuka sensor Biometrik/Passkey...', { id: 'bio-toast' });
+      const bioResult = await registerBiometricCredential(
+        user.uid,
+        dbUser?.waNumber || user.email || user.uid,
+        dbUser?.nama || 'Pengguna US BILIBILI 162'
+      );
+
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        loginMethod: 'biometric',
+        biometricCredentialId: bioResult.credentialId,
+        biometricRawId: bioResult.rawId
+      });
+
+      toast.success('Biometrik (Sidik Jari / Wajah) berhasil didaftarkan!', { id: 'bio-toast' });
+      navigate('/', { replace: true });
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Gagal merestatistik biometrik.', { id: 'bio-toast' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const savePasswordPreference = async () => {
     setLoading(true);
     try {
@@ -180,6 +217,29 @@ export default function LoginPreference() {
 
             {/* CHOICE BUTTONS */}
             <div className="space-y-4">
+              {/* Option 0: Biometrics / Fingerprint / Passkey (Ultra Secure) */}
+              <button
+                onClick={saveBiometricPreference}
+                disabled={loading}
+                className="w-full text-left p-5 bg-gradient-to-br from-indigo-500/10 via-sky-500/10 to-blue-500/10 hover:from-indigo-500/20 hover:to-sky-500/20 border border-indigo-300/70 rounded-2xl flex items-start gap-4 transition-all duration-300 transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer relative group shadow-sm"
+              >
+                <div className="bg-gradient-to-tr from-indigo-600 to-sky-500 text-white p-2.5 rounded-xl mt-0.5 shadow-md shadow-indigo-500/25">
+                  <Fingerprint size={22} className="animate-pulse" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-extrabold text-sm text-slate-900">Biometrik (Sidik Jari / Wajah)</span>
+                    <span className="bg-indigo-100 text-indigo-700 text-[9px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border border-indigo-200">
+                      Super Aman
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1 leading-normal">
+                    Masuk secara instan dengan sensor fingerprint atau Face ID bawaan HP / Laptop tanpa perlu mengetik apapun.
+                  </p>
+                </div>
+                <ArrowRight size={16} className="text-indigo-600 mt-3 group-hover:translate-x-1 transition-transform" />
+              </button>
+
               {/* Option 1: PIN (Recommended) */}
               <button
                 onClick={() => setStep('setup_pin')}
