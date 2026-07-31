@@ -78,6 +78,10 @@ export async function registerBiometricCredential(
   userName: string,
   displayName: string
 ): Promise<{ credentialId: string; rawId: string }> {
+  if (isInIframe()) {
+    throw new Error('Fitur Biometrik dibatasi oleh iFrame pratinjau. Silakan klik "Buka di Tab Baru" untuk mendaftarkan sidik jari/wajah.');
+  }
+
   if (!window.PublicKeyCredential) {
     throw new Error('WebAuthn tidak didukung oleh browser Anda.');
   }
@@ -150,6 +154,10 @@ export async function registerBiometricCredential(
 export async function authenticateBiometricCredential(
   storedCredentialId?: string
 ): Promise<{ success: boolean; credentialId: string }> {
+  if (isInIframe()) {
+    throw new Error('Fitur Biometrik dibatasi oleh iFrame pratinjau. Silakan klik "Buka di Tab Baru" untuk memindai sidik jari/wajah.');
+  }
+
   if (!window.PublicKeyCredential) {
     throw new Error('WebAuthn tidak didukung oleh browser Anda.');
   }

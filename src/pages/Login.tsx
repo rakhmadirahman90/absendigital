@@ -610,6 +610,15 @@ export default function Login() {
                       Pindai sidik jari atau gunakan Face ID pada perangkat Anda untuk masuk.
                     </p>
 
+                    {isInIframe() && (
+                      <div className="mt-3 bg-amber-50 border border-amber-200/80 text-amber-800 text-[11px] p-2.5 rounded-xl flex items-start gap-2 text-left leading-relaxed">
+                        <span className="text-amber-600 font-bold shrink-0 mt-0.5">ℹ️</span>
+                        <span>
+                          Sensor biometrik fisik (Sidik Jari / Wajah) dibatasi oleh iFrame pratinjau browser. Silakan klik <strong>"Buka di Tab Baru"</strong> di bawah ini untuk memindai sensor, atau pilih <strong>Kata Sandi / PIN</strong>.
+                        </span>
+                      </div>
+                    )}
+
                     {/* Trigger Buttons */}
                     <div className="mt-4 flex flex-col gap-2">
                       <button

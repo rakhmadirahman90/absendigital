@@ -236,8 +236,16 @@ export default function PengaturanTab() {
           title: 'Database US BILIBILI HADIR 162'
         })
       });
-      const result = await response.json();
-      if (result.success) {
+      
+      const responseText = await response.text();
+      let result: any = {};
+      try {
+        result = responseText ? JSON.parse(responseText) : {};
+      } catch (e) {
+        throw new Error(response.ok ? 'Format respons tidak valid dari server.' : `Gagal terhubung ke server (${response.status} ${response.statusText}).`);
+      }
+
+      if (response.ok && result.success) {
         const newSettings: SheetsSettings = {
           enabled: true,
           spreadsheetId: result.spreadsheetId,
@@ -252,9 +260,9 @@ export default function PengaturanTab() {
         // Auto trigger initial data sync
         handleSyncAllData(result.spreadsheetId);
       } else {
-        let errorMsg = result.error || 'Gagal membuat spreadsheet';
-        if (errorMsg.includes('has not been used') || errorMsg.includes('disabled') || errorMsg.includes('sheets.googleapis.com')) {
-          errorMsg = 'Google Sheets API belum diaktifkan di Google Cloud. Silakan aktifkan koneksi Google Workspace terlebih dahulu.';
+        let errorMsg = result.error || response.statusText || 'Gagal membuat spreadsheet';
+        if (typeof errorMsg === 'string' && (errorMsg.includes('has not been used') || errorMsg.includes('disabled') || errorMsg.includes('sheets.googleapis.com'))) {
+          errorMsg = 'Google Sheets API sedang diaktifkan di Google Cloud Project. Silakan tunggu 1-2 menit lalu coba lagi.';
         }
         throw new Error(errorMsg);
       }
@@ -365,8 +373,15 @@ export default function PengaturanTab() {
         })
       });
 
-      const data = await res.json();
-      if (data.success) {
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (e) {
+        throw new Error(res.ok ? 'Format respons tidak valid.' : `Gagal terhubung ke server (${res.status} ${res.statusText}).`);
+      }
+
+      if (res.ok && data.success) {
         const nowStr = new Date().toISOString();
         const updated = {
           ...sheetsSettings,
