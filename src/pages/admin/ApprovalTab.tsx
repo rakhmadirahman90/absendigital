@@ -577,40 +577,69 @@ export default function ApprovalTab() {
         const { collectionName, id, status } = actionData;
         try {
             const docRef = doc(db, collectionName, id);
-            const docSnap = await getDoc(docRef);
+            let itemData: any = {};
             
-            await updateDoc(docRef, { 
-                status,
-                catatan_admin: adminRemark.trim()
-            });
-
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                const targetUserId = data.user_id;
-                let reqType = '';
-                if (collectionName === 'leave_requests') {
-                    reqType = `pengajuan ${data.tipe || 'izin/sakit/cuti'}`;
-                    await syncLeaveToAttendance(id, data, status);
-                } else {
-                    reqType = 'pengajuan lembur';
-                    await syncOvertimeToAttendance(id, data, status);
+            try {
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    itemData = docSnap.data();
                 }
+            } catch (e) {
+                console.warn('[ApprovalTab] getDoc warning:', e);
+            }
 
-                if (targetUserId) {
-                    const title = status === 'approved' ? 'Pengajuan Disetujui' : (status === 'rejected' ? 'Pengajuan Ditolak' : 'Pengajuan Diubah');
-                    const message = status === 'approved' 
-                        ? `Selamat, ${reqType} Anda telah disetujui oleh Admin.${adminRemark.trim() ? ` Catatan: ${adminRemark.trim()}` : ''}` 
-                        : (status === 'rejected' 
-                            ? `Maaf, ${reqType} Anda ditolak oleh Admin.${adminRemark.trim() ? ` Catatan: ${adminRemark.trim()}` : ''}`
-                            : `${reqType} Anda dikembalikan statusnya ke pending.`);
-                    const type = status === 'rejected' ? 'submission_rejected' : 'submission_approved';
+            if (!itemData || !itemData.user_id) {
+                const list = collectionName === 'leave_requests' ? leaveRequests : overtimeRequests;
+                const found = list.find(x => x.id === id);
+                if (found) {
+                    itemData = { ...found };
+                }
+            }
+
+            const updatedPayload = {
+                ...itemData,
+                status,
+                catatan_admin: adminRemark.trim(),
+                updated_at: new Date().toISOString()
+            };
+
+            await setDoc(docRef, updatedPayload, { merge: true });
+
+            // Optimistically update local state
+            if (collectionName === 'leave_requests') {
+                setLeaveRequests(prev => prev.map(item => item.id === id ? { ...item, status, catatan_admin: adminRemark.trim() } : item));
+            } else {
+                setOvertimeRequests(prev => prev.map(item => item.id === id ? { ...item, status, catatan_admin: adminRemark.trim() } : item));
+            }
+
+            const targetUserId = itemData.user_id;
+            let reqType = '';
+            if (collectionName === 'leave_requests') {
+                reqType = `pengajuan ${itemData.tipe || 'izin/sakit/cuti'}`;
+                await syncLeaveToAttendance(id, itemData, status);
+            } else {
+                reqType = 'pengajuan lembur';
+                await syncOvertimeToAttendance(id, itemData, status);
+            }
+
+            if (targetUserId) {
+                const title = status === 'approved' ? 'Pengajuan Disetujui' : (status === 'rejected' ? 'Pengajuan Ditolak' : 'Pengajuan Diubah');
+                const message = status === 'approved' 
+                    ? `Selamat, ${reqType} Anda telah disetujui oleh Admin.${adminRemark.trim() ? ` Catatan: ${adminRemark.trim()}` : ''}` 
+                    : (status === 'rejected' 
+                        ? `Maaf, ${reqType} Anda ditolak oleh Admin.${adminRemark.trim() ? ` Catatan: ${adminRemark.trim()}` : ''}`
+                        : `${reqType} Anda dikembalikan statusnya ke pending.`);
+                const type = status === 'rejected' ? 'submission_rejected' : 'submission_approved';
+                try {
                     await createNotification(targetUserId, title, message, type);
+                } catch (notifErr) {
+                    console.warn('[ApprovalTab] Notif error:', notifErr);
                 }
             }
 
             toast.success(`Berhasil mengubah status menjadi ${status}`);
         } catch (error) {
-            console.error(error);
+            console.error('[ApprovalTab] confirmAction error:', error);
             toast.error('Gagal mengupdate status');
         } finally {
             setActionData(null);
@@ -659,14 +688,26 @@ export default function ApprovalTab() {
                 remark = editLeaveForm.catatan_admin.trim();
                 statusChanged = originalStatus !== newStatus;
 
-                await updateDoc(doc(db, 'leave_requests', item.id), {
+                await setDoc(doc(db, 'leave_requests', item.id), {
+                    ...item,
                     tipe: editLeaveForm.tipe,
                     tanggal_mulai: editLeaveForm.tanggal_mulai,
                     tanggal_akhir: editLeaveForm.tanggal_akhir,
                     alasan: editLeaveForm.alasan.trim(),
                     status: editLeaveForm.status,
                     catatan_admin: editLeaveForm.catatan_admin.trim()
-                });
+                }, { merge: true });
+
+                setLeaveRequests(prev => prev.map(x => x.id === item.id ? {
+                    ...x,
+                    tipe: editLeaveForm.tipe,
+                    tanggal_mulai: editLeaveForm.tanggal_mulai,
+                    tanggal_akhir: editLeaveForm.tanggal_akhir,
+                    alasan: editLeaveForm.alasan.trim(),
+                    status: editLeaveForm.status,
+                    catatan_admin: editLeaveForm.catatan_admin.trim()
+                } : x));
+
                 await syncLeaveToAttendance(item.id, {
                     user_id: item.user_id,
                     tanggal_mulai: editLeaveForm.tanggal_mulai,
@@ -682,13 +723,24 @@ export default function ApprovalTab() {
                 remark = editOvertimeForm.catatan_admin.trim();
                 statusChanged = originalStatus !== newStatus;
 
-                await updateDoc(doc(db, 'overtime', item.id), {
+                await setDoc(doc(db, 'overtime', item.id), {
+                    ...item,
                     tanggal: editOvertimeForm.tanggal,
                     durasi_jam: Number(editOvertimeForm.durasi_jam),
                     keterangan: editOvertimeForm.keterangan.trim(),
                     status: editOvertimeForm.status,
                     catatan_admin: editOvertimeForm.catatan_admin.trim()
-                });
+                }, { merge: true });
+
+                setOvertimeRequests(prev => prev.map(x => x.id === item.id ? {
+                    ...x,
+                    tanggal: editOvertimeForm.tanggal,
+                    durasi_jam: Number(editOvertimeForm.durasi_jam),
+                    keterangan: editOvertimeForm.keterangan.trim(),
+                    status: editOvertimeForm.status,
+                    catatan_admin: editOvertimeForm.catatan_admin.trim()
+                } : x));
+
                 await syncOvertimeToAttendance(item.id, {
                     user_id: item.user_id,
                     tanggal: editOvertimeForm.tanggal,
@@ -727,10 +779,16 @@ export default function ApprovalTab() {
         try {
             if (collectionName === 'leave_requests') {
                 await syncLeaveToAttendance(id, {}, 'deleted');
+                setLeaveRequests(prev => prev.filter(x => x.id !== id));
             } else {
                 await syncOvertimeToAttendance(id, {}, 'deleted');
+                setOvertimeRequests(prev => prev.filter(x => x.id !== id));
             }
-            await deleteDoc(doc(db, collectionName, id));
+            try {
+                await deleteDoc(doc(db, collectionName, id));
+            } catch (delErr) {
+                console.warn('[ApprovalTab] deleteDoc notice:', delErr);
+            }
             toast.success('Pengajuan berhasil dihapus');
         } catch (error) {
             console.error(error);
