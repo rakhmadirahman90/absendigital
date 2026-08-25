@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-
 function read(file) { return fs.readFileSync(path.join(root, file), 'utf8'); }
 function write(file, text) { fs.writeFileSync(path.join(root, file), text, 'utf8'); }
 
@@ -20,7 +19,7 @@ function fixDefaults() {
 }
 
 function fixCheckInOut() {
-  const file = 'pages/CheckInOut.tsx';
+  const file = 'src/pages/CheckInOut.tsx';
   let s = read(file);
 
   s = s.replace(
@@ -82,7 +81,7 @@ function fixCheckInOut() {
 }
 
 function fixAdmin() {
-  const file = 'pages/admin/AbsensiTab.tsx';
+  const file = 'src/pages/admin/AbsensiTab.tsx';
   let s = read(file);
   const anchor = `    const parseRupiah = (formattedVal: string | number) => {
         if (typeof formattedVal === 'number') return formattedVal;
