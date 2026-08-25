@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
-    "@tailwindcss/vite": "^5.0.0",
+    "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.18.1",
     "clsx": "^2.1.1",
@@ -31,11 +31,13 @@
     "multer": "^2.2.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.18.0",
     "react-webcam": "^7.2.0",
     "recharts": "^3.9.0",
     "tailwind-merge": "^3.6.0",
-    "tailwindcss": "^4.1.1"
+    "tailwindcss": "^4.1.14",
+    "vite": "^6.2.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -44,8 +46,6 @@
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.3",
-    "esbuild": "^0.25.0"
+    "typescript": "~5.8.2"
   }
 }
