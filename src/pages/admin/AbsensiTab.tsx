@@ -104,6 +104,22 @@ export default function AbsensiTab() {
         return clean ? Number(clean) : 0;
     };
 
+    // Checkout is valid only when the system has a real checkout proof.
+    // This prevents fallback/demo data or stale jam_pulang values from appearing as a real checkout.
+    const hasVerifiedCheckout = (item: any) => Boolean(
+        item?.jam_pulang && (
+            item?.checkout_status === 'success' ||
+            item?.checkout_at ||
+            item?.method_pulang ||
+            item?.selfie_pulang ||
+            item?.latitude_pulang !== undefined ||
+            item?.longitude_pulang !== undefined
+        )
+    );
+
+    const getEffectiveCheckoutTime = (item: any) =>
+        hasVerifiedCheckout(item) ? item.jam_pulang : '';
+
     const [editingRecord, setEditingRecord] = useState<any>(null);
     const [editForm, setEditForm] = useState({ 
         jam_masuk: '', 
@@ -323,12 +339,16 @@ export default function AbsensiTab() {
                     user_id: userId,
                     tanggal: record.tanggal,
                     jam_masuk: record.jam_masuk,
+                    checkin_status: 'success',
+                    checkin_at: new Date().toISOString(),
                     status: record.status,
                     method_masuk: 'Foto AI',
                     created_at: new Date().toISOString()
                 };
                 if (record.jam_pulang) {
                     payload.jam_pulang = record.jam_pulang;
+                    payload.checkout_status = 'success';
+                    payload.checkout_at = new Date().toISOString();
                     payload.method_pulang = 'Foto AI';
                 }
 
@@ -767,7 +787,7 @@ export default function AbsensiTab() {
                 `"${(u.jabatan || '-').replace(/"/g, '""')}"`,
                 item.tanggal,
                 item.jam_masuk || '-',
-                item.jam_pulang || '-',
+                getEffectiveCheckoutTime(item) || '-',
                 item.status || 'Hadir'
             ];
         });
@@ -806,7 +826,7 @@ export default function AbsensiTab() {
         setEditingRecord(item);
         setEditForm({
             jam_masuk: item.jam_masuk || '',
-            jam_pulang: item.jam_pulang || '',
+            jam_pulang: getEffectiveCheckoutTime(item),
             status: item.status || 'Hadir',
             istirahat: calculateAutoBreakHours(item.jam_masuk, item.jam_pulang, item.istirahat),
             is_lembur: !!item.is_lembur,
@@ -819,7 +839,10 @@ export default function AbsensiTab() {
         try {
             await updateDoc(doc(db, 'attendance', editingRecord.id), {
                 jam_masuk: editForm.jam_masuk,
-                jam_pulang: editForm.jam_pulang,
+                jam_pulang: editForm.jam_pulang || '',
+                checkout_status: editForm.jam_pulang ? 'success' : '',
+                checkout_at: editForm.jam_pulang ? new Date().toISOString() : '',
+                method_pulang: editForm.jam_pulang ? 'Admin Manual' : '',
                 status: editForm.status,
                 istirahat: Number(editForm.istirahat) || 0,
                 is_lembur: !!editForm.is_lembur,
@@ -900,7 +923,7 @@ export default function AbsensiTab() {
                 `"${(u.nama || item.nama || 'Karyawan').replace(/"/g, '""')}"`,
                 `"${(u.divisi || item.divisi || '-').replace(/"/g, '""')}"`,
                 item.jam_masuk || '-',
-                item.jam_pulang || '-',
+                getEffectiveCheckoutTime(item) || '-',
                 item.status || 'Hadir',
                 item.alamat_masuk ? `"${item.alamat_masuk.replace(/"/g, '""')}"` : '-',
                 item.latitude_masuk || '-',
@@ -991,7 +1014,7 @@ export default function AbsensiTab() {
 
                 presentDates.add(rec.tanggal);
                 const inVal = rec.jam_masuk || '';
-                const outVal = rec.jam_pulang || '';
+                const outVal = getEffectiveCheckoutTime(rec);
                 
                 if (!inVal || !outVal) {
                     salaryBreakdown.push({
@@ -2195,7 +2218,7 @@ export default function AbsensiTab() {
                                                 )}
                                             </td>
                                             <td className="p-4 text-sm font-mono font-medium text-slate-600">
-                                                {item.jam_pulang ? (
+                                                {hasVerifiedCheckout(item) ? (
                                                     <span className="text-slate-700">{item.jam_pulang}</span>
                                                 ) : (
                                                     <span className="text-slate-300">-</span>
@@ -2346,7 +2369,7 @@ export default function AbsensiTab() {
                                         </div>
                                         <div>
                                             <span className="text-[9px] text-slate-400 block font-semibold uppercase tracking-wider">Jam Pulang</span>
-                                            <span className="font-mono font-bold text-slate-700 mt-0.5 block">{item.jam_pulang || '-'}</span>
+                                            <span className="font-mono font-bold text-slate-700 mt-0.5 block">{getEffectiveCheckoutTime(item) || '-'}</span>
                                         </div>
                                     </div>
 
@@ -3494,7 +3517,7 @@ export default function AbsensiTab() {
                                     <td className="p-2 font-semibold text-slate-900">{u.nama || 'Tidak Dikenal'}</td>
                                     <td className="p-2">{u.divisi || '-'}</td>
                                     <td className="p-2 font-mono font-bold text-emerald-600">{item.jam_masuk || '--:--'}</td>
-                                    <td className="p-2 font-mono text-slate-700">{item.jam_pulang || '--:--'}</td>
+                                    <td className="p-2 font-mono text-slate-700">{getEffectiveCheckoutTime(item) || '--:--'}</td>
                                     <td className="p-2 font-semibold capitalize">{item.status || 'Hadir'}</td>
                                     <td className="p-2 text-slate-500 max-w-xs">{item.alamat_masuk || '-'}</td>
                                 </tr>

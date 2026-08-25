@@ -610,6 +610,9 @@ export default function CheckInOut() {
           divisi: user.divisi || '',
           tanggal: dateStr,
           jam_masuk: timeStr,
+          checkin_status: 'success',
+          checkin_at: new Date().toISOString(),
+          method_masuk: 'selfie+gps',
           latitude_masuk: latitude,
           longitude_masuk: longitude,
           alamat_masuk: resolvedAddress,
@@ -668,11 +671,29 @@ export default function CheckInOut() {
         const localKey = `local_att_${user.uid}_${dateStr}`;
         const localData = JSON.parse(localStorage.getItem(localKey) || '{}');
 
-        if (docToUpdate && docToUpdate.data && docToUpdate.data().jam_pulang) {
-          throw new Error('Anda sudah melakukan absen pulang');
-        }
+        const existingData = docToUpdate?.data ? docToUpdate.data() : {};
+        const hasVerifiedCheckout = Boolean(
+          existingData?.jam_pulang && (
+            existingData?.checkout_status === 'success' ||
+            existingData?.checkout_at ||
+            existingData?.method_pulang ||
+            existingData?.selfie_pulang ||
+            existingData?.latitude_pulang !== undefined ||
+            existingData?.longitude_pulang !== undefined
+          )
+        );
+        const hasVerifiedLocalCheckout = Boolean(
+          localData?.jam_pulang && (
+            localData?.checkout_status === 'success' ||
+            localData?.checkout_at ||
+            localData?.method_pulang ||
+            localData?.selfie_pulang ||
+            localData?.latitude_pulang !== undefined ||
+            localData?.longitude_pulang !== undefined
+          )
+        );
 
-        if (localData && localData.jam_pulang) {
+        if (hasVerifiedCheckout || hasVerifiedLocalCheckout) {
           throw new Error('Anda sudah melakukan absen pulang');
         }
 
@@ -680,6 +701,9 @@ export default function CheckInOut() {
           try {
             await updateDoc(docToUpdate.ref, {
               jam_pulang: timeStr,
+              checkout_status: 'success',
+              checkout_at: new Date().toISOString(),
+              method_pulang: 'selfie+gps',
               latitude_pulang: latitude,
               longitude_pulang: longitude,
               alamat_pulang: resolvedAddress,
@@ -694,6 +718,9 @@ export default function CheckInOut() {
         const updatedLocal = {
           ...localData,
           jam_pulang: timeStr,
+          checkout_status: 'success',
+          checkout_at: new Date().toISOString(),
+          method_pulang: 'selfie+gps',
           latitude_pulang: latitude,
           longitude_pulang: longitude,
           alamat_pulang: resolvedAddress,
