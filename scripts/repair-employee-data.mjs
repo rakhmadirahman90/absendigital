@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import {
-  getFirestore,
+  initializeFirestore,
   collection,
   getDocs,
   doc,
@@ -20,7 +20,10 @@ const firebaseConfig = {
 
 const DATABASE_ID = 'ai-studio-624bea7c-68f3-4297-85df-707056c1d162';
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app, DATABASE_ID);
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  useFetchStreams: false,
+}, DATABASE_ID);
 
 const CANONICAL = {
   PUNDU: { id: 'wa-0816200005', waNumber: '0816200005' },
