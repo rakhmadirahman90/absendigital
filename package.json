@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "node scripts/fix-attendance-checkout.mjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "node scripts/fix-attendance-checkout.mjs && node scripts/fix-attendance-source.mjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
@@ -37,7 +37,7 @@
     "recharts": "^3.9.0",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.1.14",
-    "vite": "^6.2.3"
+    "react-webcam": "^7.2.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
