@@ -113,17 +113,20 @@ export default function DashboardTab() {
 
     // 2. Monitor Today's Attendance Real-time
     const applyAttendanceFallback = () => {
-      let hadirHariIni = DEFAULT_ATTENDANCE.length;
-      let terlambat = 0;
-      setRecentAttendance(DEFAULT_ATTENDANCE.slice(0, 5));
+      // Firestore is the only source of truth for the dashboard attendance feed.
+      // Empty/error must never substitute DEFAULT_ATTENDANCE demo rows.
+      setRecentAttendance([]);
       setStats(prev => {
-        const belumAbsen = Math.max(0, (prev.totalKaryawan || DEFAULT_USERS.length) - hadirHariIni - (prev.izinCutiHariIni || 0));
+        const hadirHariIni = 0;
+        const terlambat = 0;
+        const belumAbsen = Math.max(0, (prev.totalKaryawan || 0) - (prev.izinCutiHariIni || 0));
         return { ...prev, hadirHariIni, terlambat, belumAbsen };
       });
     };
 
     const unsubAttendance = onSnapshot(query(collection(db, 'attendance'), where('tanggal', '==', today)), (attendanceSnap) => {
       if (attendanceSnap.empty) {
+        // No Firestore attendance today: show no activity, never demo data.
         applyAttendanceFallback();
         return;
       }
