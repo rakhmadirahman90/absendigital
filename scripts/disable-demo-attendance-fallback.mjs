@@ -5,46 +5,42 @@ const file = path.join(process.cwd(), 'src/pages/admin/AbsensiTab.tsx');
 let source = fs.readFileSync(file, 'utf8');
 
 // Build-time only. Never writes to Firebase.
-function replaceDemoFallback(text) {
-  const marker = 'if (data.length === 0)';
-  let from = 0;
-  let changed = false;
-
-  while (true) {
-    const start = text.indexOf(marker, from);
-    if (start < 0) break;
-    const braceStart = text.indexOf('{', start);
-    if (braceStart < 0) break;
-
-    let depth = 0;
-    let end = -1;
-    for (let i = braceStart; i < text.length; i++) {
-      if (text[i] === '{') depth++;
-      else if (text[i] === '}') {
-        depth--;
-        if (depth === 0) { end = i + 1; break; }
-      }
-    }
-    if (end < 0) break;
-
-    const block = text.slice(start, end);
-    if (block.includes('DEFAULT_ATTENDANCE')) {
-      const indent = text.slice(text.lastIndexOf('\n', start) + 1, start).match(/^\s*/)?.[0] || '';
-      const replacement = `${indent}if (data.length === 0) {\n${indent}    // Firestore is authoritative; no stored record means no attendance.\n${indent}    data = [];\n${indent}}`;
-      text = text.slice(0, start) + replacement + text.slice(end);
-      from = start + replacement.length;
-      changed = true;
-    } else {
-      from = end;
-    }
+// Firestore is the only source of truth for attendance reports.
+const replacements = [
+  {
+    from: `            if (data.length === 0) {\n                data = [...DEFAULT_ATTENDANCE];\n            }`,
+    to: `            if (data.length === 0) {\n                // No Firestore record = no attendance. Never inject demo attendance.\n                data = [];\n            }`
+  },
+  {
+    from: `            setAttendance(DEFAULT_ATTENDANCE);`,
+    to: `            setAttendance([]);`
+  },
+  {
+    from: `            if (records.length === 0) {\n                setMonthlyRecords(DEFAULT_ATTENDANCE);\n            } else {`,
+    to: `            if (records.length === 0) {\n                // No Firestore record = no monthly attendance.\n                setMonthlyRecords([]);\n            } else {`
+  },
+  {
+    from: `            setMonthlyRecords(DEFAULT_ATTENDANCE);`,
+    to: `            setMonthlyRecords([]);`
   }
-  return { text, changed };
+];
+
+let changed = false;
+for (const { from, to } of replacements) {
+  if (source.includes(from)) {
+    source = source.split(from).join(to);
+    changed = true;
+  }
 }
 
-const result = replaceDemoFallback(source);
-if (result.changed) {
-  fs.writeFileSync(file, result.text, 'utf8');
-  console.log('Demo attendance fallback disabled.');
+if (!source.includes('DEFAULT_ATTENDANCE') && source.includes(', DEFAULT_ATTENDANCE')) {
+  source = source.replace(', DEFAULT_ATTENDANCE', '');
+  changed = true;
+}
+
+if (changed) {
+  fs.writeFileSync(file, source, 'utf8');
+  console.log('Attendance demo fallback disabled: Firestore is authoritative.');
 } else {
-  console.log('Demo attendance fallback already disabled; continuing build.');
+  console.log('Attendance demo fallback already disabled; continuing build.');
 }
