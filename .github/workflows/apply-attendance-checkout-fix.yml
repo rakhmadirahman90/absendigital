@@ -18,11 +18,14 @@ jobs:
       - name: Apply checkout verification fix
         run: python3 scripts/fix-attendance-checkout.py
 
+      - name: Apply dashboard real-attendance fix
+        run: python3 scripts/fix-dashboard-real-attendance.py
+
       - name: Commit source changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/data/defaultData.ts src/pages/CheckInOut.tsx src/pages/admin/AbsensiTab.tsx
+          git add src/data/defaultData.ts src/pages/CheckInOut.tsx src/pages/admin/AbsensiTab.tsx src/pages/admin/DashboardTab.tsx scripts/fix-dashboard-real-attendance.py
           if git diff --cached --quiet; then
             echo "No source changes were necessary."
             exit 0
