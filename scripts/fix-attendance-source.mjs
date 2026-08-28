@@ -15,6 +15,19 @@ for (const oldBlock of fallbackVariants) {
   if (s.includes(oldBlock)) s = s.replace(oldBlock, replacement);
 }
 
+// Legacy-safe checkout rule:
+// - Today: only a verified checkout is displayed as JAM PULANG.
+// - Historical dates: an already-stored jam_pulang is preserved even when
+//   older records do not contain checkout metadata. This prevents historical
+//   payroll from becoming 0 after the newer checkout-proof validation.
+const oldCheckoutHelper = `    const hasVerifiedCheckout = (item: any) => Boolean(\n        item?.jam_pulang && (\n            item?.checkout_status === 'success' ||\n            item?.checkout_at ||\n            item?.method_pulang ||\n            item?.selfie_pulang ||\n            item?.latitude_pulang !== undefined ||\n            item?.longitude_pulang !== undefined\n        )\n    );\n\n    const getEffectiveCheckoutTime = (item: any) =>\n        hasVerifiedCheckout(item) ? item.jam_pulang : '';\n`;
+const newCheckoutHelper = `    const hasVerifiedCheckout = (item: any) => {\n        if (!item?.jam_pulang) return false;\n\n        const isStoredCheckoutVerified = Boolean(\n            item?.checkout_status === 'success' ||\n            item?.checkout_at ||\n            item?.method_pulang ||\n            item?.selfie_pulang ||\n            item?.latitude_pulang !== undefined ||\n            item?.longitude_pulang !== undefined\n        );\n\n        // Keep today's UI strict so an unverified/stale jam_pulang cannot\n        // falsely show that the employee has already checked out.\n        const today = format(new Date(), 'yyyy-MM-dd');\n        const recordDate = String(item?.tanggal || '');\n        if (recordDate === today) return isStoredCheckoutVerified;\n\n        // Historical attendance is immutable source data. If a checkout time\n        // was already stored before this validation was introduced, preserve it.\n        return isStoredCheckoutVerified || Boolean(recordDate && recordDate < today);\n    };\n\n    const getEffectiveCheckoutTime = (item: any) =>\n        hasVerifiedCheckout(item) ? item.jam_pulang : '';\n`;
+if (s.includes(oldCheckoutHelper)) {
+  s = s.replace(oldCheckoutHelper, newCheckoutHelper);
+} else if (!s.includes('const getEffectiveCheckoutTime = (item: any)')) {
+  throw new Error('Checkout helper not found; refusing to modify attendance source.');
+}
+
 // Use the exact stored check-in/out clocks for work-hour calculations.
 if (!s.includes('const getEffectiveWorkHours = (item: any) =>')) {
   s = s.replace(
@@ -45,9 +58,8 @@ fs.writeFileSync(karyawanFile, k, 'utf8');
 // Keep bundled fallback/default PUNDU configuration consistent.
 const defaultFile = path.join(process.cwd(), 'src/data/defaultData.ts');
 let d = fs.readFileSync(defaultFile, 'utf8');
-d = d.replace("nama: 'PUNDU',\n    divisi: '162',", "nama: 'PUNDU',\n    divisi: '162',");
 d = d.replace("gaji_per_jam: 10000,\n    gaji_lembur_per_jam: 14000,", "gaji_per_jam: 10000,\n    gaji_lembur_per_jam: 10000,");
 fs.writeFileSync(defaultFile, d, 'utf8');
 
 fs.writeFileSync(file, s, 'utf8');
-console.log('Attendance source-of-truth, live hours, and PUNDU payroll migration fixes applied.');
+console.log('Attendance source-of-truth, legacy checkout preservation, live hours, and PUNDU payroll migration fixes applied.');
