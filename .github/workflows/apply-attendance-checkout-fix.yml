@@ -1,31 +1,21 @@
 name: Apply Attendance Checkout Fix
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   apply-fix:
-    if: ${{ !contains(github.event.head_commit.message, '[attendance-fix-applied]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Restore and repair complete admin attendance tab
-        run: python3 scripts/repair-absensi-tab-date-filter.py
-
-      - name: Commit source changes
+      - name: Verify repaired admin attendance tab
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/pages/admin/AbsensiTab.tsx scripts/repair-absensi-tab-date-filter.py
-          if git diff --cached --quiet; then
-            echo "No source changes were necessary."
-            exit 0
-          fi
-          git commit -m "fix: restore complete admin attendance records [attendance-fix-applied]"
-          git push
+          test -s src/pages/admin/AbsensiTab.tsx
+          grep -q "const normalizeDate" src/pages/admin/AbsensiTab.tsx
+          grep -q "Compatibility attendance read notice" src/pages/admin/AbsensiTab.tsx
+          echo "Attendance tab repair verified."
