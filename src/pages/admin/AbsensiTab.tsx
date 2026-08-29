@@ -429,23 +429,29 @@ export default function AbsensiTab() {
 
     useEffect(() => {
         setLoading(true);
-        let q;
-        if (filterDateMode === 'all') {
-            q = query(collection(db, 'attendance'));
-        } else {
-            q = query(collection(db, 'attendance'), where('tanggal', '==', filterDate));
-        }
-        
-        const unsubAttendance = onSnapshot(q, (snap) => {
-            let data: any[] = [];
-            snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
 
-            if (data.length === 0) {
-                data = [...DEFAULT_ATTENDANCE];
+        // Read the complete real attendance collection first, then filter in the
+        // client. This avoids a missing/incorrect Firestore query index or a
+        // legacy date-format mismatch hiding valid employee records.
+        const unsubAttendance = onSnapshot(collection(db, 'attendance'), (snap) => {
+            let data: any[] = [];
+            snap.forEach(docSnap => data.push({ id: docSnap.id, ...docSnap.data() }));
+
+            // Normalize date values so legacy records remain visible.
+            const normalizeDate = (value: any): string => {
+                if (!value) return '';
+                if (typeof value === 'string') return value.slice(0, 10);
+                if (value?.toDate) return format(value.toDate(), 'yyyy-MM-dd');
+                if (value instanceof Date) return format(value, 'yyyy-MM-dd');
+                return String(value).slice(0, 10);
+            };
+
+            if (filterDateMode !== 'all') {
+                data = data.filter(item => normalizeDate(item.tanggal) === filterDate);
             }
 
             data.sort((a, b) => {
-                const dateComp = (b.tanggal || '').localeCompare(a.tanggal || '');
+                const dateComp = normalizeDate(b.tanggal).localeCompare(normalizeDate(a.tanggal));
                 if (dateComp !== 0) return dateComp;
                 return (b.jam_masuk || '').localeCompare(a.jam_masuk || '');
             });
@@ -456,13 +462,16 @@ export default function AbsensiTab() {
                     return user.divisi === filterDivisi || item.divisi === filterDivisi;
                 });
             }
-            
+
+            // IMPORTANT: never replace real Firestore data with demo attendance.
+            // Empty means genuinely no records for the selected date.
             setAttendance(data);
             setLoading(false);
         }, (error) => {
-            console.warn("[AbsensiTab] Attendance sync notice, using fallbacks:", error?.message || error);
-            setAttendance(DEFAULT_ATTENDANCE);
+            console.error('[AbsensiTab] Attendance sync error:', error?.message || error);
+            setAttendance([]);
             setLoading(false);
+            toast.error('Gagal memuat data absensi dari server. Silakan coba lagi.');
         });
 
         return () => unsubAttendance();
