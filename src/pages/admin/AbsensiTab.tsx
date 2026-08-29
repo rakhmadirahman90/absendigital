@@ -433,8 +433,14 @@ export default function AbsensiTab() {
         const normalizeDate = (value: any) => {
             if (!value) return '';
             if (typeof value === 'string') {
-                const match = value.match(/(\d{4}-\d{2}-\d{2})/);
-                return match ? match[1] : value.slice(0, 10);
+                const isoMatch = value.match(/(\d{4}-\d{2}-\d{2})/);
+                if (isoMatch) return isoMatch[1];
+
+                // Legacy records may store dates as DD/MM/YYYY or DD-MM-YYYY.
+                const legacyMatch = value.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})/);
+                if (legacyMatch) return `${legacyMatch[3]}-${legacyMatch[2]}-${legacyMatch[1]}`;
+
+                return value.slice(0, 10);
             }
             if (value?.toDate) {
                 try { return format(value.toDate(), 'yyyy-MM-dd'); } catch (_) {}
@@ -483,6 +489,7 @@ export default function AbsensiTab() {
                     const { getDocs } = await import('firebase/firestore');
                     const allSnap = await getDocs(collection(db, 'attendance'));
                     data = buildData(allSnap, true);
+                    console.info(`[AbsensiTab] Compatibility attendance fallback loaded ${data.length} record(s) for ${filterDate}.`);
                 } catch (fallbackError: any) {
                     console.warn('[AbsensiTab] Compatibility attendance read notice:', fallbackError?.message || fallbackError);
                 }
