@@ -15,9 +15,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Apply dashboard real-attendance fix
-        run: python3 scripts/fix-dashboard-real-attendance.py
-
       - name: Apply admin attendance list fix
         run: python3 scripts/fix-absensi-tab-real-data.py
 
@@ -25,7 +22,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/pages/admin/DashboardTab.tsx src/pages/admin/AbsensiTab.tsx scripts/fix-dashboard-real-attendance.py scripts/fix-absensi-tab-real-data.py
+          git add src/pages/admin/AbsensiTab.tsx
           if git diff --cached --quiet; then
             echo "No source changes were necessary."
             exit 0
