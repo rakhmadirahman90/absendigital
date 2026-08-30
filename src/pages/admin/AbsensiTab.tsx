@@ -9,6 +9,22 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
 import { DEFAULT_USERS, DEFAULT_ATTENDANCE, DEFAULT_PAYROLLS } from '../../data/defaultData';
 
+const normalizeAttendanceDate = (value: any): string => {
+    if (!value) return '';
+    if (typeof value === 'string') {
+        const isoMatch = value.match(/(\d{4}-\d{2}-\d{2})/);
+        if (isoMatch) return isoMatch[1];
+        const legacyMatch = value.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})/);
+        if (legacyMatch) return `${legacyMatch[3]}-${legacyMatch[2]}-${legacyMatch[1]}`;
+        return value.slice(0, 10);
+    }
+    if (value?.toDate) {
+        try { return format(value.toDate(), 'yyyy-MM-dd'); } catch (_) {}
+    }
+    if (value instanceof Date) return format(value, 'yyyy-MM-dd');
+    return '';
+};
+
 export default function AbsensiTab() {
     const [attendance, setAttendance] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -187,7 +203,9 @@ export default function AbsensiTab() {
                 allRecords.push({ id: doc.id, ...data });
             });
 
-            const filtered = allRecords.filter(r => r.tanggal >= reportStartDate && r.tanggal <= reportEndDate);
+            const filtered = allRecords
+                .map(r => ({ ...r, tanggal: normalizeAttendanceDate(r.tanggal) || r.tanggal }))
+                .filter(r => r.tanggal >= reportStartDate && r.tanggal <= reportEndDate);
             
             if (filtered.length === 0) {
                 throw new Error(`Tidak ditemukan data absensi untuk rentang tanggal ${reportStartDate} hingga ${reportEndDate}`);
@@ -517,18 +535,21 @@ export default function AbsensiTab() {
         if (activeSubTab !== 'bulanan' && activeSubTab !== 'gaji') return;
 
         setMonthlyLoading(true);
-        const start = `${selectedMonth}-01`;
-        const end = `${selectedMonth}-31`;
-        const q = query(
-            collection(db, 'attendance'),
-            where('tanggal', '>=', start),
-            where('tanggal', '<=', end)
-        );
-
-        const unsubMonthly = onSnapshot(q, (snap) => {
+        // Read the authoritative attendance collection and normalize every stored date.
+        // Do not rely on a Firestore string range because legacy records can use
+        // DD/MM/YYYY or DD-MM-YYYY and would otherwise be silently excluded.
+        const unsubMonthly = onSnapshot(collection(db, 'attendance'), (snap) => {
             const records: any[] = [];
             snap.forEach(doc => {
-                records.push({ id: doc.id, ...doc.data() });
+                const record = { id: doc.id, ...doc.data() };
+                if (normalizeAttendanceDate(record.tanggal).startsWith(selectedMonth)) {
+                    records.push(record);
+                }
+            });
+            records.sort((a, b) => {
+                const da = normalizeAttendanceDate(a.tanggal);
+                const db = normalizeAttendanceDate(b.tanggal);
+                return `${db} ${b.jam_masuk || ''}`.localeCompare(`${da} ${a.jam_masuk || ''}`);
             });
             setMonthlyRecords(records);
             setMonthlyLoading(false);
@@ -673,11 +694,15 @@ export default function AbsensiTab() {
         try {
             const start = `${selectedMonth}-01`;
             const end = `${selectedMonth}-31`;
+            const normalizedMonthlyRecords = filteredMonthlyRecords.map(record => ({
+                ...record,
+                tanggal: normalizeAttendanceDate(record.tanggal) || record.tanggal
+            }));
             const response = await fetch('/api/generate-ai-report', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    records: filteredMonthlyRecords,
+                    records: normalizedMonthlyRecords,
                     users: usersMap,
                     startDate: start,
                     endDate: end,
