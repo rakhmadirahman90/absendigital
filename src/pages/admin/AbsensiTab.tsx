@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { db } from '../../lib/firebase';
 import { calculateAutoBreakHours } from '../../lib/utils';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { collection, query, where, or, onSnapshot, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter, Printer, Download, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
@@ -492,27 +492,27 @@ export default function AbsensiTab() {
 
         // Normal daily mode: query only the selected date. This keeps Firestore
         // reads small and prevents the daily page from exhausting the quota.
+        const legacyDate = (() => {
+            const m = filterDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            return m ? { slash: `${m[3]}/${m[2]}/${m[1]}`, dash: `${m[3]}-${m[2]}-${m[1]}` } : null;
+        })();
+
+        // One bounded OR query covers ISO + legacy date formats without
+        // downloading the entire attendance collection.
         const q = filterDateMode === 'all'
             ? query(collection(db, 'attendance'))
-            : query(collection(db, 'attendance'), where('tanggal', '==', filterDate));
+            : legacyDate
+                ? query(collection(db, 'attendance'), or(
+                    where('tanggal', '==', filterDate),
+                    where('tanggal', '==', legacyDate.slash),
+                    where('tanggal', '==', legacyDate.dash)
+                  ))
+                : query(collection(db, 'attendance'), where('tanggal', '==', filterDate));
 
         const unsubAttendance = onSnapshot(q, async (snap) => {
             let data = buildData(snap);
-
-            // Primary exact-date query is efficient. If it returns zero rows,
-            // perform one compatibility read so legacy date formats cannot hide
-            // valid attendance records from the admin.
-            if (filterDateMode !== 'all' && snap.empty) {
-                try {
-                    const { getDocs } = await import('firebase/firestore');
-                    const allSnap = await getDocs(collection(db, 'attendance'));
-                    data = buildData(allSnap, true);
-                    console.info(`[AbsensiTab] Compatibility attendance fallback loaded ${data.length} record(s) for ${filterDate}.`);
-                } catch (fallbackError: any) {
-                    console.warn('[AbsensiTab] Compatibility attendance read notice:', fallbackError?.message || fallbackError);
-                }
-            }
-
+            // Legacy daily formats are already covered by the bounded OR query.
+            // Never fall back to reading the entire collection here.
             setAttendance(data);
             setLoading(false);
         }, (error) => {
@@ -538,23 +538,24 @@ export default function AbsensiTab() {
         // Read the authoritative attendance collection and normalize every stored date.
         // Do not rely on a Firestore string range because legacy records can use
         // DD/MM/YYYY or DD-MM-YYYY and would otherwise be silently excluded.
-        const unsubMonthly = onSnapshot(collection(db, 'attendance'), (snap) => {
+        const [monthYear, monthNum] = selectedMonth.split('-');
+        const monthStart = `${selectedMonth}-01`;
+        const nextMonthDate = new Date(Number(monthYear), Number(monthNum), 1);
+        const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
+        const monthQuery = query(
+            collection(db, 'attendance'),
+            where('tanggal', '>=', monthStart),
+            where('tanggal', '<', nextMonth)
+        );
+
+        const unsubMonthly = onSnapshot(monthQuery, (snap) => {
             const records: any[] = [];
-            snap.forEach(doc => {
-                const record = { id: doc.id, ...doc.data() };
-                if (normalizeAttendanceDate(record.tanggal).startsWith(selectedMonth)) {
-                    records.push(record);
-                }
-            });
-            records.sort((a, b) => {
-                const da = normalizeAttendanceDate(a.tanggal);
-                const db = normalizeAttendanceDate(b.tanggal);
-                return `${db} ${b.jam_masuk || ''}`.localeCompare(`${da} ${a.jam_masuk || ''}`);
-            });
+            snap.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
+            records.sort((a, b) => `${normalizeAttendanceDate(b.tanggal)} ${b.jam_masuk || ''}`.localeCompare(`${normalizeAttendanceDate(a.tanggal)} ${a.jam_masuk || ''}`));
             setMonthlyRecords(records);
             setMonthlyLoading(false);
         }, (error) => {
-            console.warn('[AbsensiTab] Monthly records sync notice, using fallbacks:', error?.message || error);
+            console.warn('[AbsensiTab] Monthly records sync notice:', error?.message || error);
             setMonthlyRecords([]);
             setMonthlyLoading(false);
         });
