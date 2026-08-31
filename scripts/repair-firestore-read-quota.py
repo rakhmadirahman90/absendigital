@@ -16,22 +16,20 @@ new_q = """        const legacyDate = (() => {\n            const m = filterDate
 if old_q in s:
     s = s.replace(old_q, new_q, 1)
 
-# Remove the expensive collection-wide compatibility fallback after an empty daily query.
+# Remove any remaining collection-wide compatibility fallback after an empty daily query.
 old_fallback = re.compile(r"\n\s*// Primary exact-date query is efficient\. If it returns zero rows,.*?\n\s*}\n\n\s*setAttendance\(data\);", re.S)
 new_fallback = """\n            // Legacy daily formats are already covered by the bounded OR query.\n            // Never fall back to reading the entire collection here.\n            setAttendance(data);"""
-s, n = old_fallback.subn(new_fallback, s, count=1)
-if n == 0:
-    # Already repaired is acceptable.
-    pass
+s, _ = old_fallback.subn(new_fallback, s, count=1)
 
-# Replace the collection-wide monthly listener with a bounded ISO month query.
-start_marker = "        const unsubMonthly = onSnapshot(collection(db, 'attendance'), (snap) => {"
+# Monthly: read only three bounded date ranges (ISO, DD/MM/YYYY, DD-MM-YYYY).
+# This preserves legacy August records while avoiding a full collection scan.
+start_marker = "        const [monthYear, monthNum] = selectedMonth.split('-');"
 end_marker = "\n\n        // Listen to payroll adjustments for this month"
 start = s.find(start_marker)
 end = s.find(end_marker, start)
 if start != -1 and end != -1:
-    monthly = """        const [monthYear, monthNum] = selectedMonth.split('-');\n        const monthStart = `${selectedMonth}-01`;\n        const nextMonthDate = new Date(Number(monthYear), Number(monthNum), 1);\n        const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}-01`;\n        const monthQuery = query(\n            collection(db, 'attendance'),\n            where('tanggal', '>=', monthStart),\n            where('tanggal', '<', nextMonth)\n        );\n\n        const unsubMonthly = onSnapshot(monthQuery, (snap) => {\n            const records: any[] = [];\n            snap.forEach(doc => records.push({ id: doc.id, ...doc.data() }));\n            records.sort((a, b) => `${normalizeAttendanceDate(b.tanggal)} ${b.jam_masuk || ''}`.localeCompare(`${normalizeAttendanceDate(a.tanggal)} ${a.jam_masuk || ''}`));\n            setMonthlyRecords(records);\n            setMonthlyLoading(false);\n        }, (error) => {\n            console.warn('[AbsensiTab] Monthly records sync notice:', error?.message || error);\n            setMonthlyRecords([]);\n            setMonthlyLoading(false);\n        });"""
+    monthly = """        const [monthYear, monthNum] = selectedMonth.split('-');\n        const lastDay = new Date(Number(monthYear), Number(monthNum), 0).getDate();\n        const isoStart = `${selectedMonth}-01`;\n        const nextMonthDate = new Date(Number(monthYear), Number(monthNum), 1);\n        const isoEnd = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}-01`;\n        const legacyStart = `01/${monthNum}/${monthYear}`;\n        const legacyEnd = `${String(lastDay).padStart(2, '0')}/${monthNum}/${monthYear}`;\n        const legacyDashStart = `01-${monthNum}-${monthYear}`;\n        const legacyDashEnd = `${String(lastDay).padStart(2, '0')}-${monthNum}-${monthYear}`;\n\n        const monthlyQueries = [\n            query(collection(db, 'attendance'), where('tanggal', '>=', isoStart), where('tanggal', '<', isoEnd)),\n            query(collection(db, 'attendance'), where('tanggal', '>=', legacyStart), where('tanggal', '<=', legacyEnd)),\n            query(collection(db, 'attendance'), where('tanggal', '>=', legacyDashStart), where('tanggal', '<=', legacyDashEnd))\n        ];\n        const monthlyById: Record<string, any> = {};\n        let monthlyLoaded = 0;\n        const handleMonthlySnap = (snap: any) => {\n            snap.forEach((docSnap: any) => {\n                monthlyById[docSnap.id] = { id: docSnap.id, ...docSnap.data() };\n            });\n            monthlyLoaded += 1;\n            if (monthlyLoaded === monthlyQueries.length) {\n                const records = Object.values(monthlyById).sort((a: any, b: any) =>\n                    `${normalizeAttendanceDate(b.tanggal)} ${b.jam_masuk || ''}`.localeCompare(`${normalizeAttendanceDate(a.tanggal)} ${a.jam_masuk || ''}`)\n                );\n                setMonthlyRecords(records);\n                setMonthlyLoading(false);\n            }\n        };\n        const monthlyUnsubs = monthlyQueries.map(monthQuery => onSnapshot(monthQuery, handleMonthlySnap, (error) => {\n            console.warn('[AbsensiTab] Monthly records sync notice:', error?.message || error);\n            monthlyLoaded += 1;\n            if (monthlyLoaded === monthlyQueries.length) {\n                setMonthlyRecords(Object.values(monthlyById));\n                setMonthlyLoading(false);\n            }\n        }));\n        const unsubMonthly = () => monthlyUnsubs.forEach(unsub => unsub());"""
     s = s[:start] + monthly + s[end:]
 
 path.write_text(s, encoding='utf-8')
-print('Firestore attendance read paths repaired for quota safety.')
+print('Firestore attendance reads are bounded and legacy monthly date formats are included.')
