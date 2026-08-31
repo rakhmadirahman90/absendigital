@@ -15,10 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Apply attendance compatibility repair
-        run: python3 scripts/repair-absensi-tab-date-filter.py
-
-      - name: Apply Firestore quota-safe repair
+      - name: Apply Firestore quota-safe attendance repair
         run: python3 scripts/repair-firestore-read-quota.py
 
       - name: Commit source changes
@@ -30,5 +27,5 @@ jobs:
             echo "No source changes were necessary."
             exit 0
           fi
-          git commit -m "fix: restore attendance and prevent Firestore quota exhaustion [attendance-fix-applied]"
+          git commit -m "fix: prevent Firestore quota exhaustion [attendance-fix-applied]"
           git push
