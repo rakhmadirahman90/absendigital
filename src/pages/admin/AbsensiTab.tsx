@@ -539,26 +539,44 @@ export default function AbsensiTab() {
         // Do not rely on a Firestore string range because legacy records can use
         // DD/MM/YYYY or DD-MM-YYYY and would otherwise be silently excluded.
         const [monthYear, monthNum] = selectedMonth.split('-');
-        const monthStart = `${selectedMonth}-01`;
+        const lastDay = new Date(Number(monthYear), Number(monthNum), 0).getDate();
+        const isoStart = `${selectedMonth}-01`;
         const nextMonthDate = new Date(Number(monthYear), Number(monthNum), 1);
-        const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
-        const monthQuery = query(
-            collection(db, 'attendance'),
-            where('tanggal', '>=', monthStart),
-            where('tanggal', '<', nextMonth)
-        );
+        const isoEnd = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
+        const legacyStart = `01/${monthNum}/${monthYear}`;
+        const legacyEnd = `${String(lastDay).padStart(2, '0')}/${monthNum}/${monthYear}`;
+        const legacyDashStart = `01-${monthNum}-${monthYear}`;
+        const legacyDashEnd = `${String(lastDay).padStart(2, '0')}-${monthNum}-${monthYear}`;
 
-        const unsubMonthly = onSnapshot(monthQuery, (snap) => {
-            const records: any[] = [];
-            snap.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
-            records.sort((a, b) => `${normalizeAttendanceDate(b.tanggal)} ${b.jam_masuk || ''}`.localeCompare(`${normalizeAttendanceDate(a.tanggal)} ${a.jam_masuk || ''}`));
-            setMonthlyRecords(records);
-            setMonthlyLoading(false);
-        }, (error) => {
+        const monthlyQueries = [
+            query(collection(db, 'attendance'), where('tanggal', '>=', isoStart), where('tanggal', '<', isoEnd)),
+            query(collection(db, 'attendance'), where('tanggal', '>=', legacyStart), where('tanggal', '<=', legacyEnd)),
+            query(collection(db, 'attendance'), where('tanggal', '>=', legacyDashStart), where('tanggal', '<=', legacyDashEnd))
+        ];
+        const monthlyById: Record<string, any> = {};
+        let monthlyLoaded = 0;
+        const handleMonthlySnap = (snap: any) => {
+            snap.forEach((docSnap: any) => {
+                monthlyById[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
+            });
+            monthlyLoaded += 1;
+            if (monthlyLoaded === monthlyQueries.length) {
+                const records = Object.values(monthlyById).sort((a: any, b: any) =>
+                    `${normalizeAttendanceDate(b.tanggal)} ${b.jam_masuk || ''}`.localeCompare(`${normalizeAttendanceDate(a.tanggal)} ${a.jam_masuk || ''}`)
+                );
+                setMonthlyRecords(records);
+                setMonthlyLoading(false);
+            }
+        };
+        const monthlyUnsubs = monthlyQueries.map(monthQuery => onSnapshot(monthQuery, handleMonthlySnap, (error) => {
             console.warn('[AbsensiTab] Monthly records sync notice:', error?.message || error);
-            setMonthlyRecords([]);
-            setMonthlyLoading(false);
-        });
+            monthlyLoaded += 1;
+            if (monthlyLoaded === monthlyQueries.length) {
+                setMonthlyRecords(Object.values(monthlyById));
+                setMonthlyLoading(false);
+            }
+        }));
+        const unsubMonthly = () => monthlyUnsubs.forEach(unsub => unsub());
 
         // Listen to payroll adjustments for this month
         const qPayrolls = query(
