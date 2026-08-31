@@ -18,14 +18,17 @@ jobs:
       - name: Apply attendance compatibility repair
         run: python3 scripts/repair-absensi-tab-date-filter.py
 
+      - name: Apply Firestore quota-safe repair
+        run: python3 scripts/repair-firestore-read-quota.py
+
       - name: Commit source changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/pages/admin/AbsensiTab.tsx
+          git add src/pages/admin/AbsensiTab.tsx scripts/repair-firestore-read-quota.py
           if git diff --cached --quiet; then
             echo "No source changes were necessary."
             exit 0
           fi
-          git commit -m "fix: restore all attendance date compatibility [attendance-fix-applied]"
+          git commit -m "fix: restore attendance and prevent Firestore quota exhaustion [attendance-fix-applied]"
           git push
