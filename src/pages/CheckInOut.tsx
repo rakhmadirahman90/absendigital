@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import { db } from '../lib/firebase';
-import { collection, getDocs, query, where, addDoc, updateDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where, setDoc, updateDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 import { MapPin, Camera, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Navigation, Compass, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -119,6 +119,57 @@ function drawWatermark(
     img.src = imageSrc;
   });
 }
+
+
+const ATTENDANCE_SYNC_QUEUE_KEY = 'hadir162_attendance_sync_queue_v1';
+
+const isFirestoreQuotaError = (err: any) => {
+  const code = String(err?.code || '').toLowerCase();
+  const message = String(err?.message || err || '').toLowerCase();
+  return code === 'resource-exhausted' ||
+    message.includes('resource-exhausted') ||
+    message.includes('quota') ||
+    message.includes('free tier') ||
+    message.includes('exceeded');
+};
+
+const readAttendanceSyncQueue = (): Record<string, any> => {
+  try {
+    return JSON.parse(localStorage.getItem(ATTENDANCE_SYNC_QUEUE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+};
+
+const queueAttendanceSync = (id: string, payload: any) => {
+  const queue = readAttendanceSyncQueue();
+  queue[id] = { id, payload, queuedAt: new Date().toISOString() };
+  localStorage.setItem(ATTENDANCE_SYNC_QUEUE_KEY, JSON.stringify(queue));
+};
+
+const removeAttendanceSync = (id: string) => {
+  const queue = readAttendanceSyncQueue();
+  delete queue[id];
+  if (Object.keys(queue).length === 0) {
+    localStorage.removeItem(ATTENDANCE_SYNC_QUEUE_KEY);
+  } else {
+    localStorage.setItem(ATTENDANCE_SYNC_QUEUE_KEY, JSON.stringify(queue));
+  }
+};
+
+const flushAttendanceSyncQueue = async () => {
+  const queue = readAttendanceSyncQueue();
+  for (const item of Object.values(queue)) {
+    try {
+      await setDoc(doc(db, 'attendance', (item as any).id), (item as any).payload, { merge: true });
+      removeAttendanceSync((item as any).id);
+    } catch (err) {
+      if (isFirestoreQuotaError(err)) break;
+      console.warn('[CheckInOut] Attendance sync retry notice:', err);
+      break;
+    }
+  }
+};
 
 export default function CheckInOut() {
   const { user, dbUser } = useAuth();
@@ -269,6 +320,19 @@ export default function CheckInOut() {
       }
     }
   };
+
+  // Retry queued attendance records on startup, when the browser comes online,
+  // and periodically. This makes quota/network interruptions recover automatically.
+  useEffect(() => {
+    const sync = () => { void flushAttendanceSyncQueue(); };
+    sync();
+    window.addEventListener('online', sync);
+    const timer = window.setInterval(sync, 60000);
+    return () => {
+      window.removeEventListener('online', sync);
+      window.clearInterval(timer);
+    };
+  }, [user?.uid]);
 
   // Load office configurations and user location on component mount
   useEffect(() => {
@@ -489,28 +553,34 @@ export default function CheckInOut() {
         resolvedAddress
       );
 
-      // Check existing attendance gracefully with Quota/Offline fallback
+      // Local-first duplicate check. This avoids a Firestore read on repeat
+      // attendance from the same device and gives the user a reliable fallback
+      // when the project read quota is temporarily exhausted.
       let existingDocs: any[] = [];
       let isExistingEmpty = true;
-      try {
-        const attendanceRef = collection(db, 'attendance');
-        const q = query(attendanceRef, where('user_id', '==', user.uid), where('tanggal', '==', dateStr));
-        const existingSnap = await getDocs(q);
-        existingDocs = existingSnap.docs;
-        isExistingEmpty = existingSnap.empty;
-      } catch (dbReadErr: any) {
-        console.warn('[CheckInOut] Firestore attendance check notice (Quota/Network):', dbReadErr);
-        const localKey = `local_att_${user.uid}_${dateStr}`;
-        const savedLocal = localStorage.getItem(localKey);
-        if (savedLocal) {
-          try {
-            const parsed = JSON.parse(savedLocal);
-            existingDocs = [{ id: parsed.id || 'local-att-1', data: () => parsed, ref: null }];
-            isExistingEmpty = false;
-          } catch (e) {
-            isExistingEmpty = true;
-          }
-        } else {
+      const localKey = `local_att_${user.uid}_${dateStr}`;
+      const savedLocal = localStorage.getItem(localKey);
+      if (savedLocal) {
+        try {
+          const parsed = JSON.parse(savedLocal);
+          existingDocs = [{ id: parsed.id || `att-${user.uid}-${dateStr}`, data: () => parsed, ref: doc(db, 'attendance', parsed.id || `att-${user.uid}-${dateStr}`) }];
+          isExistingEmpty = false;
+        } catch {
+          isExistingEmpty = true;
+        }
+      }
+
+      if (isExistingEmpty) {
+        try {
+          const attendanceRef = collection(db, 'attendance');
+          const q = query(attendanceRef, where('user_id', '==', user.uid), where('tanggal', '==', dateStr));
+          const existingSnap = await getDocs(q);
+          existingDocs = existingSnap.docs;
+          isExistingEmpty = existingSnap.empty;
+        } catch (dbReadErr: any) {
+          console.warn('[CheckInOut] Firestore attendance check deferred (quota/network):', dbReadErr);
+          // Do not turn a quota problem into a fake "belum absen" error.
+          // The write below is persisted locally and queued for server sync.
           isExistingEmpty = true;
         }
       }
@@ -621,18 +691,24 @@ export default function CheckInOut() {
           created_at: new Date().toISOString()
         };
 
-        try {
-          const attendanceRef = collection(db, 'attendance');
-          await addDoc(attendanceRef, {
-            ...recordPayload,
-            created_at: serverTimestamp()
-          });
-        } catch (writeErr: any) {
-          console.warn('[CheckInOut] Firestore write notice (Quota/Network):', writeErr);
-        }
+        const attendanceId = recordPayload.id;
+        const firestorePayload = {
+          ...recordPayload,
+          created_at: serverTimestamp()
+        };
 
-        // Always store in localStorage backup
-        localStorage.setItem(`local_att_${user.uid}_${dateStr}`, JSON.stringify(recordPayload));
+        // setDoc writes to the local Firestore cache immediately. With persistent
+        // cache enabled, Firestore can synchronize the mutation after connectivity
+        // or quota recovers. We also keep an explicit queue for quota rejection.
+        void setDoc(doc(db, 'attendance', attendanceId), firestorePayload, { merge: true })
+          .then(() => removeAttendanceSync(attendanceId))
+          .catch((writeErr: any) => {
+            console.warn('[CheckInOut] Firestore write deferred:', writeErr);
+            queueAttendanceSync(attendanceId, recordPayload);
+          });
+
+        // Always keep a device backup as a second recovery path.
+        localStorage.setItem(localKey, JSON.stringify(recordPayload));
         
         createNotification(
           user.uid,
@@ -697,23 +773,30 @@ export default function CheckInOut() {
           throw new Error('Anda sudah melakukan absen pulang');
         }
 
-        if (docToUpdate && docToUpdate.ref) {
-          try {
-            await updateDoc(docToUpdate.ref, {
-              jam_pulang: timeStr,
-              checkout_status: 'success',
-              checkout_at: new Date().toISOString(),
-              method_pulang: 'selfie+gps',
-              latitude_pulang: latitude,
-              longitude_pulang: longitude,
-              alamat_pulang: resolvedAddress,
-              selfie_pulang: watermarkedImageSrc,
-              updated_at: serverTimestamp()
-            });
-          } catch (writeErr) {
-            console.warn('[CheckInOut] Firestore update notice (Quota/Network):', writeErr);
-          }
-        }
+        const checkoutPayload = {
+          jam_pulang: timeStr,
+          checkout_status: 'success',
+          checkout_at: new Date().toISOString(),
+          method_pulang: 'selfie+gps',
+          latitude_pulang: latitude,
+          longitude_pulang: longitude,
+          alamat_pulang: resolvedAddress,
+          selfie_pulang: watermarkedImageSrc,
+          updated_at: new Date().toISOString()
+        };
+
+        // Prefer the real Firestore document when known; otherwise use the
+        // deterministic attendance ID so a quota failure never loses the checkout.
+        const checkoutDocId = docToUpdate?.id || localData?.id || `att-${user.uid}-${dateStr}`;
+        void setDoc(doc(db, 'attendance', checkoutDocId), {
+          ...checkoutPayload,
+          updated_at: serverTimestamp()
+        }, { merge: true })
+          .then(() => removeAttendanceSync(checkoutDocId))
+          .catch((writeErr: any) => {
+            console.warn('[CheckInOut] Firestore checkout deferred:', writeErr);
+            queueAttendanceSync(checkoutDocId, checkoutPayload);
+          });
 
         const updatedLocal = {
           ...localData,
@@ -742,16 +825,13 @@ export default function CheckInOut() {
       }
     } catch (err: any) {
       const errStr = String(err?.message || err);
-      if (
-        errStr.includes('Quota') || 
-        errStr.toLowerCase().includes('quota') || 
-        errStr.toLowerCase().includes('free tier') || 
-        errStr.toLowerCase().includes('exceeded') || 
-        err?.code === 'resource-exhausted'
-      ) {
-        const friendlyMsg = 'Batas kuota database terlampaui. Presensi tetap dicatat dalam Mode Cadangan!';
+      if (isFirestoreQuotaError(err)) {
+        // The UI must not report a failed attendance when the only problem is
+        // a temporary Firestore quota. The record is already kept locally and
+        // queued for automatic synchronization.
+        const friendlyMsg = 'Presensi tersimpan. Sinkronisasi Firestore akan dilanjutkan otomatis saat kuota tersedia.';
         setError(friendlyMsg);
-        toast.error('Batas kuota Firestore terlampaui. Presensi disimpan di Mode Cadangan.');
+        toast.success(friendlyMsg);
       } else {
         setError(errStr);
         toast.error(errStr);
