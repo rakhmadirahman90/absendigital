@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import config from '../../firebase-applet-config.json';
 
 const app = initializeApp(config);
@@ -9,5 +9,8 @@ const databaseId = (config as any).firestoreDatabaseId || "ai-studio-624bea7c-68
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   useFetchStreams: false,
+  // Keep active Firestore data and pending writes in IndexedDB so attendance
+  // remains usable when the daily Firestore quota is temporarily exhausted.
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 } as any, databaseId);
 
