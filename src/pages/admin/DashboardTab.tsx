@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, query, where, onSnapshot, getDocs, limit, orderBy } from 'firebase/firestore';
+import { collection, query, where, or, onSnapshot, getDocs, getDocsFromCache, limit, orderBy } from 'firebase/firestore';
 import { Users, CheckCircle, Clock, Download, BarChart2, AlertCircle, Eye, Calendar, ArrowRight, FileCheck, CheckCircle2, RefreshCw, MessageSquare } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
@@ -102,57 +102,99 @@ export default function DashboardTab() {
         const belumAbsen = Math.max(0, totalKaryawan - (prev.hadirHariIni || 0) - (prev.izinCutiHariIni || 0));
         return { ...prev, totalKaryawan, belumAbsen };
       });
-    }, (error: any) => {
-      applyUserFallback();
-      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
-        setQuotaError(true);
-      } else {
-        console.warn("[DashboardTab] Users sync notice:", error?.message || error);
+    }, async (error: any) => {
+      const isQuota = error?.message?.includes('Quota') || error?.code === 'resource-exhausted';
+      if (isQuota) setQuotaError(true);
+
+      // Quota errors must not erase data already available in the browser cache.
+      // Firestore persistentLocalCache keeps previously-read documents in IndexedDB.
+      try {
+        const cachedUsers = await getDocsFromCache(collection(db, 'users'));
+        if (!cachedUsers.empty) {
+          const map: Record<string, any> = {};
+          cachedUsers.forEach(doc => {
+            const data = doc.data();
+            const userData = { id: doc.id, ...data };
+            map[doc.id] = userData;
+            if (data.id) map[data.id] = userData;
+            if (data.uid) map[data.uid] = userData;
+            if (data.user_id) map[data.user_id] = userData;
+            if (data.waNumber) {
+              const rawWa = String(data.waNumber);
+              const cleanWa = rawWa.replace(/\\D/g, '');
+              map[rawWa] = userData;
+              map[cleanWa] = userData;
+              map[`wa-${rawWa}`] = userData;
+              map[`wa-${cleanWa}`] = userData;
+            }
+            if (data.nama) map[data.nama.toLowerCase().trim()] = userData;
+          });
+          setUsersMap(map);
+          setStats(prev => ({ ...prev, totalKaryawan: cachedUsers.size }));
+          return;
+        }
+      } catch (cacheError) {
+        console.warn("[DashboardTab] Users cache unavailable:", cacheError);
       }
+
+      applyUserFallback();
+      if (!isQuota) console.warn("[DashboardTab] Users sync notice:", error?.message || error);
     });
 
     // 2. Monitor Today's Attendance Real-time
-    const applyAttendanceFallback = () => {
-      // Firestore is the only source of truth for the dashboard attendance feed.
-      // Empty/error must never substitute DEFAULT_ATTENDANCE demo rows.
-      setRecentAttendance([]);
-      setStats(prev => {
-        const hadirHariIni = 0;
-        const terlambat = 0;
-        const belumAbsen = Math.max(0, (prev.totalKaryawan || 0) - (prev.izinCutiHariIni || 0));
-        return { ...prev, hadirHariIni, terlambat, belumAbsen };
-      });
-    };
+    const attendanceQuery = query(
+      collection(db, 'attendance'),
+      or(
+        where('tanggal', '==', today),
+        where('tanggal', '==', today.split('-').reverse().join('/')),
+        where('tanggal', '==', today.split('-').reverse().join('-'))
+      )
+    );
 
-    const unsubAttendance = onSnapshot(query(collection(db, 'attendance'), where('tanggal', '==', today)), (attendanceSnap) => {
-      if (attendanceSnap.empty) {
-        // No Firestore attendance today: show no activity, never demo data.
-        applyAttendanceFallback();
-        return;
-      }
-      let hadirHariIni = attendanceSnap.size;
-      let terlambat = 0;
+    const applyAttendanceSnapshot = (attendanceSnap: any) => {
       const logs: any[] = [];
-      
-      attendanceSnap.forEach(doc => {
+      attendanceSnap.forEach((doc: any) => {
         const data = doc.data();
-        if (data.status === 'Terlambat') {
-          terlambat++;
-        }
         logs.push({ id: doc.id, ...data });
       });
 
       logs.sort((a, b) => (b.jam_masuk || '').localeCompare(a.jam_masuk || ''));
-      setRecentAttendance(logs.slice(0, 5));
+      const hadirHariIni = logs.length;
+      const terlambat = logs.filter(log => log.status === 'Terlambat').length;
 
-      setStats(prev => {
-        const belumAbsen = Math.max(0, (prev.totalKaryawan || 0) - hadirHariIni - (prev.izinCutiHariIni || 0));
-        return { ...prev, hadirHariIni, terlambat, belumAbsen };
-      });
-    }, (error: any) => {
-      applyAttendanceFallback();
-      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+      setRecentAttendance(logs.slice(0, 5));
+      setStats(prev => ({
+        ...prev,
+        hadirHariIni,
+        terlambat,
+        belumAbsen: Math.max(0, (prev.totalKaryawan || 0) - hadirHariIni - (prev.izinCutiHariIni || 0))
+      }));
+    };
+
+    const loadAttendanceCache = async () => {
+      try {
+        const cachedAttendance = await getDocsFromCache(attendanceQuery);
+        applyAttendanceSnapshot(cachedAttendance);
+        return !cachedAttendance.empty;
+      } catch (cacheError) {
+        console.warn("[DashboardTab] Attendance cache unavailable:", cacheError);
+        return false;
+      }
+    };
+
+    const unsubAttendance = onSnapshot(attendanceQuery, (attendanceSnap) => {
+      // Always use the snapshot delivered by Firestore, including a cached
+      // snapshot. Never replace it with demo/zero data just because the server
+      // subsequently reports RESOURCE_EXHAUSTED.
+      applyAttendanceSnapshot(attendanceSnap);
+      if (!attendanceSnap.metadata?.fromCache) {
+        setQuotaError(false);
+      }
+    }, async (error: any) => {
+      const isQuota = error?.message?.includes('Quota') || error?.code === 'resource-exhausted';
+      if (isQuota) {
         setQuotaError(true);
+        await loadAttendanceCache();
       } else {
         console.warn("[DashboardTab] Attendance sync notice:", error?.message || error);
       }
@@ -181,40 +223,40 @@ export default function DashboardTab() {
     });
 
     // 4. Monitor Pending Approvals (Leave Requests + Overtimes)
-    const unsubLeavePending = onSnapshot(query(collection(db, 'leave_requests'), where('status', '==', 'pending')), (leaveSnap) => {
-      const leaves: any[] = [];
-      leaveSnap.forEach(doc => {
-        leaves.push({ id: doc.id, type: 'leave', category: 'Cuti/Izin', timestamp: doc.data().created_at || '', ...doc.data() });
-      });
+    // Keep both listeners at the top level. The previous nested listener created
+    // a new overtime listener every time leave data changed, multiplying reads.
+    let latestLeaves: any[] = [];
+    let latestOvertimes: any[] = [];
 
-      // Get pending overtimes too
-      const unsubOvertimePending = onSnapshot(query(collection(db, 'overtime'), where('status', '==', 'pending')), (otSnap) => {
-        const ots: any[] = [];
-        otSnap.forEach(doc => {
-          ots.push({ id: doc.id, type: 'overtime', category: 'Lembur', timestamp: doc.data().tanggal || '', ...doc.data() });
-        });
-
-        // Combine and sort by timestamp
-        const combined = [...leaves, ...ots].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-        setPendingSubmissions(combined.slice(0, 5));
-        setLoading(false);
-      }, (otError: any) => {
-        if (otError?.message?.includes('Quota') || otError?.code === 'resource-exhausted') {
-          setQuotaError(true);
-        } else {
-          console.warn("[DashboardTab] Overtime sync notice:", otError?.message || otError);
-        }
-        setLoading(false);
-      });
-
-      return () => unsubOvertimePending();
-    }, (error: any) => {
-      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
-        setQuotaError(true);
-      } else {
-        console.warn("[DashboardTab] Pending leave sync notice:", error?.message || error);
-      }
+    const refreshPending = () => {
+      const combined = [...latestLeaves, ...latestOvertimes]
+        .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+      setPendingSubmissions(combined.slice(0, 5));
       setLoading(false);
+    };
+
+    const unsubLeavePending = onSnapshot(query(collection(db, 'leave_requests'), where('status', '==', 'pending')), (leaveSnap) => {
+      latestLeaves = [];
+      leaveSnap.forEach(doc => {
+        latestLeaves.push({ id: doc.id, type: 'leave', category: 'Cuti/Izin', timestamp: doc.data().created_at || '', ...doc.data() });
+      });
+      refreshPending();
+    }, (error: any) => {
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') setQuotaError(true);
+      else console.warn("[DashboardTab] Pending leave sync notice:", error?.message || error);
+      refreshPending();
+    });
+
+    const unsubOvertimePending = onSnapshot(query(collection(db, 'overtime'), where('status', '==', 'pending')), (otSnap) => {
+      latestOvertimes = [];
+      otSnap.forEach(doc => {
+        latestOvertimes.push({ id: doc.id, type: 'overtime', category: 'Lembur', timestamp: doc.data().tanggal || '', ...doc.data() });
+      });
+      refreshPending();
+    }, (error: any) => {
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') setQuotaError(true);
+      else console.warn("[DashboardTab] Overtime sync notice:", error?.message || error);
+      refreshPending();
     });
 
     // 5. Monitor Current Week's Attendance Trends (On-Time vs Late)
@@ -276,6 +318,7 @@ export default function DashboardTab() {
       unsubAttendance();
       unsubLeave();
       unsubLeavePending();
+      unsubOvertimePending();
       unsubWeeklyTrends();
       unsubWaLogs();
     };
@@ -349,10 +392,10 @@ export default function DashboardTab() {
             <AlertCircle size={24} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
               <h3 className="font-extrabold text-sm uppercase tracking-wider text-amber-800 dark:text-amber-300">
-                Batas Kuota Pembacaan Firestore Terlampaui (Free Tier Quota Exceeded)
+                Mode Cache Aktif — Kuota Pembacaan Firestore Sedang Penuh
               </h3>
               <p className="text-xs text-amber-700 dark:text-amber-300/80 mt-1 leading-relaxed">
-                Database Firestore telah mencapai batas kuota pembacaan harian (Free Daily Read Units). Kuota ini akan di-reset secara otomatis besok, atau Anda dapat meng-upgrade billing proyek Firebase untuk akses tanpa batas.
+                Firestore sedang menolak pembacaan server karena kuota harian. Dashboard tidak akan menghapus data yang sudah tersimpan; sistem akan menampilkan data dari cache lokal bila tersedia dan melakukan sinkronisasi kembali saat akses server pulih.
               </p>
             </div>
           </div>
