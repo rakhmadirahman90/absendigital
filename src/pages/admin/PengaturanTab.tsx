@@ -15,7 +15,7 @@ import {
   onSnapshot, 
   deleteDoc,
   serverTimestamp 
-} from 'firebase/firestore';
+} from '../../lib/firestore';
 import { toast } from 'react-hot-toast';
 import { 
   Building, 
