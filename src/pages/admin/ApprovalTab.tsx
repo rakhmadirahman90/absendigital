@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '../../lib/firebase';
-import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc, addDoc, getDocs, where, limit, setDoc } from 'firebase/firestore';
+import { db } from '../../lib/firestore';
+import { collection, doc, updateDoc, deleteDoc, query, orderBy, onSnapshot, getDoc, addDoc, getDocs, where, limit, setDoc } from '../../lib/firestore';
 import { Check, X, Search, Filter, RefreshCw, Calendar, Clock, User, MessageSquare, ChevronDown, Edit, Trash2, Sparkles, AlertTriangle, ShieldCheck, CheckCircle2, MapPin } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
