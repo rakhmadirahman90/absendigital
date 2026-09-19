@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { db } from '../../lib/firebase';
+import { db } from '../../lib/firestore';
 import { calculateAutoBreakHours } from '../../lib/utils';
-import { collection, query, where, or, onSnapshot, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { collection, query, where, or, onSnapshot, doc, updateDoc, deleteDoc, setDoc } from '../../lib/firestore';
 import { MapPin, Image as ImageIcon, Edit2, Trash2, X, Users, CheckCircle2, Clock, AlertTriangle, Search, Filter, Printer, Download, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
