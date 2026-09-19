@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
+import { db } from '../lib/firestore';
+import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, orderBy } from '../lib/firestore';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { useAuth } from '../context/AuthContext';
