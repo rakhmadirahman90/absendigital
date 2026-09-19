@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import { db } from '../lib/firebase';
-import { collection, getDocs, query, where, setDoc, updateDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firestore';
+import { collection, getDocs, query, where, setDoc, updateDoc, serverTimestamp, doc, getDoc } from '../lib/firestore';
 import { MapPin, Camera, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, Navigation, Compass, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
