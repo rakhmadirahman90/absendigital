@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '../../lib/firebase';
-import { collection, doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../lib/firestore';
+import { collection, doc, getDoc, setDoc, deleteDoc, onSnapshot } from '../../lib/firestore';
 import { Plus, Edit2, Trash2, Building, UserPlus, Upload, Download, Sparkles } from 'lucide-react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'react-hot-toast';
