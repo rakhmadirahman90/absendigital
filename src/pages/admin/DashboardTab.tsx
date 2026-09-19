@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '../../lib/firebase';
-import { collection, query, where, or, onSnapshot, getDocs, getDocsFromCache, limit, orderBy } from 'firebase/firestore';
+import { db } from '../../lib/firestore';
+import { collection, query, where, or, onSnapshot, getDocs, getDocsFromCache, limit, orderBy } from '../../lib/firestore';
 import { Users, CheckCircle, Clock, Download, BarChart2, AlertCircle, Eye, Calendar, ArrowRight, FileCheck, CheckCircle2, RefreshCw, MessageSquare } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import { toast } from 'react-hot-toast';
