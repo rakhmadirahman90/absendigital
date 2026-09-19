@@ -1,5 +1,5 @@
-import { db } from './firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from './firestore';
+import { collection, addDoc, serverTimestamp } from './firestore';
 
 export type NotificationType = 'attendance' | 'submission_approved' | 'submission_rejected';
 
