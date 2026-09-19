@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { doc, onSnapshot } from '../lib/firestore';
+import { db } from '../lib/firestore';
 
 type AuthContextType = {
   user: any | null;
