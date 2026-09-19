@@ -6,8 +6,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import axios from "axios";
-import { initializeApp } from "firebase/app";
-import { initializeFirestore, collection, getDocs, query, where, addDoc, getDoc, doc, setDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, addDoc, getDoc, doc, setDoc } from "./serverDb";
 import { google } from "googleapis";
 
 const app = express();
@@ -1681,26 +1680,9 @@ app.post("/api/send-wa", async (req, res) => {
   });
 });
 
-// Initialize Firebase on server side
-const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-let db: any = null;
-
-if (fs.existsSync(configPath)) {
-  try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const firebaseApp = initializeApp(config);
-    const dbId = config.firestoreDatabaseId || "ai-studio-624bea7c-68f3-4297-85df-707056c1d162";
-    db = initializeFirestore(firebaseApp, {
-      experimentalForceLongPolling: true,
-      useFetchStreams: false,
-    } as any, dbId);
-    console.log(`[Firebase Server-Side] Initialized successfully with Database ID: ${dbId}`);
-  } catch (err) {
-    console.error("[Firebase Server-Side] Failed to initialize:", err);
-  }
-} else {
-  console.error("[Firebase Server-Side] firebase-applet-config.json not found");
-}
+// Supabase is the sole server-side persistence layer for HADIR 162.
+// Set SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY) in Vercel for server writes.
+const db = true;
 
 const getWITATime = () => {
   const now = new Date();
