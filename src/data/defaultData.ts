@@ -29,21 +29,6 @@ export const DEFAULT_USERS = [
     bonus_dryer_1: false
   },
   {
-    id: 'wa-0816200002',
-    waNumber: '0816200002',
-    nama: 'JUNED',
-    divisi: '162',
-    jabatan: 'OPERATOR',
-    role: 'karyawan',
-    password: '123456',
-    assignedOfficeId: 'all',
-    gaji_type: 'per_jam',
-    gaji_bulanan: 0,
-    gaji_per_jam: 12000,
-    gaji_lembur_per_jam: 15000,
-    bonus_dryer_1: false
-  },
-  {
     id: 'wa-0816200003',
     waNumber: '0816200003',
     nama: 'ABI',
