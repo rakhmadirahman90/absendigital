@@ -553,47 +553,30 @@ export default function AbsensiTab() {
             query(collection(db, 'attendance'), where('tanggal', '>=', legacyStart), where('tanggal', '<=', legacyEnd)),
             query(collection(db, 'attendance'), where('tanggal', '>=', legacyDashStart), where('tanggal', '<=', legacyDashEnd))
         ];
-
-        // Monthly recap is a report, not a realtime dashboard. Use one-time
-        // reads instead of three permanent listeners so attendance updates do
-        // not repeatedly re-read the entire selected month.
-        const loadMonthly = async () => {
-            const monthlyById: Record<string, any> = {};
-            try {
-                const snapshots = await Promise.all(
-                    monthlyQueries.map(monthQuery => getDocs(monthQuery))
-                );
-                snapshots.forEach((snap: any) => {
-                    snap.forEach((docSnap: any) => {
-                        monthlyById[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
-                    });
-                });
+        const monthlyById: Record<string, any> = {};
+        let monthlyLoaded = 0;
+        const handleMonthlySnap = (snap: any) => {
+            snap.forEach((docSnap: any) => {
+                monthlyById[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
+            });
+            monthlyLoaded += 1;
+            if (monthlyLoaded === monthlyQueries.length) {
                 const records = Object.values(monthlyById).sort((a: any, b: any) =>
-                    `${normalizeAttendanceDate(b.tanggal)} ${b.jam_masuk || ''}`
-                      .localeCompare(`${normalizeAttendanceDate(a.tanggal)} ${a.jam_masuk || ''}`)
+                    `${normalizeAttendanceDate(b.tanggal)} ${b.jam_masuk || ''}`.localeCompare(`${normalizeAttendanceDate(a.tanggal)} ${a.jam_masuk || ''}`)
                 );
                 setMonthlyRecords(records);
-            } catch (error: any) {
-                console.warn('[AbsensiTab] Monthly records load notice:', error?.message || error);
-                try {
-                    const snapshots = await Promise.all(
-                        monthlyQueries.map(monthQuery => getDocsFromCache(monthQuery))
-                    );
-                    snapshots.forEach((snap: any) => {
-                        snap.forEach((docSnap: any) => {
-                            monthlyById[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
-                        });
-                    });
-                    setMonthlyRecords(Object.values(monthlyById));
-                } catch (cacheError) {
-                    console.warn('[AbsensiTab] Monthly cache unavailable:', cacheError);
-                    setMonthlyRecords([]);
-                }
-            } finally {
                 setMonthlyLoading(false);
             }
         };
-        void loadMonthly();
+        const monthlyUnsubs = monthlyQueries.map(monthQuery => onSnapshot(monthQuery, handleMonthlySnap, (error) => {
+            console.warn('[AbsensiTab] Monthly records sync notice:', error?.message || error);
+            monthlyLoaded += 1;
+            if (monthlyLoaded === monthlyQueries.length) {
+                setMonthlyRecords(Object.values(monthlyById));
+                setMonthlyLoading(false);
+            }
+        }));
+        const unsubMonthly = () => monthlyUnsubs.forEach(unsub => unsub());
 
         // Listen to payroll adjustments for this month
         const qPayrolls = query(
