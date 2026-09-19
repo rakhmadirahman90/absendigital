@@ -84,8 +84,8 @@ export const DEFAULT_USERS = [
     assignedOfficeId: 'all',
     gaji_type: 'per_jam',
     gaji_bulanan: 0,
-    gaji_per_jam: 10000,
-    gaji_lembur_per_jam: 14000,
+    gaji_per_jam: 12500,
+    gaji_lembur_per_jam: 12500,
     bonus_dryer_1: false
   }
 ];
