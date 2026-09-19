@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { doc, updateDoc } from '../lib/firestore';
+import { db } from '../lib/firestore';
 import { useAuth } from '../context/AuthContext';
 import { registerBiometricCredential, checkBiometricSupport, isInIframe } from '../lib/webauthn';
 import AppLogo from '../components/AppLogo';
