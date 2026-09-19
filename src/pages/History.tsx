@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firestore';
+import { collection, query, where, onSnapshot } from '../lib/firestore';
 import { getLocalAttendanceRecords } from '../lib/localStorageAttendance';
 import { format, parseISO } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
