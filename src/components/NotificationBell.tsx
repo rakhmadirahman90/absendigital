@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, where, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { db } from '../lib/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from '../lib/firestore';
 import { useAuth } from '../context/AuthContext';
 import { Bell, BellRing, Check, Trash2, X, Clock, AlertTriangle, CheckCircle2, Inbox } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
