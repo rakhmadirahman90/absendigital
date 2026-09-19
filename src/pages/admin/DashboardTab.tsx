@@ -59,13 +59,13 @@ export default function DashboardTab() {
       }));
     };
 
-    const unsubUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
+    const applyUsersSnapshot = (usersSnap: any) => {
       if (usersSnap.empty) {
         applyUserFallback();
         return;
       }
       const map: Record<string, any> = {};
-      usersSnap.forEach(doc => {
+      usersSnap.forEach((doc: any) => {
         const data = doc.data();
         const userData = { id: doc.id, ...data };
         map[doc.id] = userData;
@@ -91,55 +91,39 @@ export default function DashboardTab() {
             }
           }
         }
-        if (data.nama) {
-          map[data.nama.toLowerCase().trim()] = userData;
-        }
+        if (data.nama) map[data.nama.toLowerCase().trim()] = userData;
       });
       setUsersMap(map);
-      
       const totalKaryawan = usersSnap.size;
-      setStats(prev => {
-        const belumAbsen = Math.max(0, totalKaryawan - (prev.hadirHariIni || 0) - (prev.izinCutiHariIni || 0));
-        return { ...prev, totalKaryawan, belumAbsen };
-      });
-    }, async (error: any) => {
-      const isQuota = error?.message?.includes('Quota') || error?.code === 'resource-exhausted';
-      if (isQuota) setQuotaError(true);
+      setStats(prev => ({
+        ...prev,
+        totalKaryawan,
+        belumAbsen: Math.max(0, totalKaryawan - (prev.hadirHariIni || 0) - (prev.izinCutiHariIni || 0))
+      }));
+    };
 
-      // Quota errors must not erase data already available in the browser cache.
-      // Firestore persistentLocalCache keeps previously-read documents in IndexedDB.
+    // Employee master data is static enough for the dashboard; avoid a
+    // permanent listener that continuously consumes Firestore reads.
+    const loadUsersOnce = async () => {
       try {
-        const cachedUsers = await getDocsFromCache(collection(db, 'users'));
-        if (!cachedUsers.empty) {
-          const map: Record<string, any> = {};
-          cachedUsers.forEach(doc => {
-            const data = doc.data();
-            const userData = { id: doc.id, ...data };
-            map[doc.id] = userData;
-            if (data.id) map[data.id] = userData;
-            if (data.uid) map[data.uid] = userData;
-            if (data.user_id) map[data.user_id] = userData;
-            if (data.waNumber) {
-              const rawWa = String(data.waNumber);
-              const cleanWa = rawWa.replace(/\\D/g, '');
-              map[rawWa] = userData;
-              map[cleanWa] = userData;
-              map[`wa-${rawWa}`] = userData;
-              map[`wa-${cleanWa}`] = userData;
-            }
-            if (data.nama) map[data.nama.toLowerCase().trim()] = userData;
-          });
-          setUsersMap(map);
-          setStats(prev => ({ ...prev, totalKaryawan: cachedUsers.size }));
-          return;
+        applyUsersSnapshot(await getDocs(collection(db, 'users')));
+      } catch (error: any) {
+        const isQuota = error?.message?.includes('Quota') || error?.code === 'resource-exhausted';
+        if (isQuota) setQuotaError(true);
+        try {
+          const cachedUsers = await getDocsFromCache(collection(db, 'users'));
+          if (!cachedUsers.empty) {
+            applyUsersSnapshot(cachedUsers);
+            return;
+          }
+        } catch (cacheError) {
+          console.warn("[DashboardTab] Users cache unavailable:", cacheError);
         }
-      } catch (cacheError) {
-        console.warn("[DashboardTab] Users cache unavailable:", cacheError);
+        applyUserFallback();
+        if (!isQuota) console.warn("[DashboardTab] Users load notice:", error?.message || error);
       }
-
-      applyUserFallback();
-      if (!isQuota) console.warn("[DashboardTab] Users sync notice:", error?.message || error);
-    });
+    };
+    void loadUsersOnce();
 
     // 2. Monitor Today's Attendance Real-time
     const attendanceQuery = query(
@@ -201,26 +185,25 @@ export default function DashboardTab() {
     });
 
     // 3. Monitor Today's Approved Leaves
-    const unsubLeave = onSnapshot(query(collection(db, 'leave_requests'), where('tanggal_mulai', '<=', today)), (leaveSnap) => {
-      let izinCutiHariIni = 0;
-      leaveSnap.forEach(doc => {
-        const data = doc.data();
-        if (data.status === 'approved' && data.tanggal_akhir >= today) {
-          izinCutiHariIni++;
-        }
-      });
-      
-      setStats(prev => {
-        const belumAbsen = Math.max(0, (prev.totalKaryawan || 0) - (prev.hadirHariIni || 0) - izinCutiHariIni);
-        return { ...prev, izinCutiHariIni, belumAbsen };
-      });
-    }, (error: any) => {
-      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
-        setQuotaError(true);
-      } else {
-        console.warn("[DashboardTab] Leave sync notice:", error?.message || error);
+    const loadLeaveOnce = async () => {
+      try {
+        const leaveSnap = await getDocs(query(collection(db, 'leave_requests'), where('tanggal_mulai', '<=', today)));
+        let izinCutiHariIni = 0;
+        leaveSnap.forEach((docSnap: any) => {
+          const data = docSnap.data();
+          if (data.status === 'approved' && data.tanggal_akhir >= today) izinCutiHariIni++;
+        });
+        setStats(prev => ({
+          ...prev,
+          izinCutiHariIni,
+          belumAbsen: Math.max(0, (prev.totalKaryawan || 0) - (prev.hadirHariIni || 0) - izinCutiHariIni)
+        }));
+      } catch (error: any) {
+        if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') setQuotaError(true);
+        else console.warn("[DashboardTab] Leave load notice:", error?.message || error);
       }
-    });
+    };
+    void loadLeaveOnce();
 
     // 4. Monitor Pending Approvals (Leave Requests + Overtimes)
     // Keep both listeners at the top level. The previous nested listener created
@@ -314,9 +297,7 @@ export default function DashboardTab() {
     });
 
     return () => {
-      unsubUsers();
       unsubAttendance();
-      unsubLeave();
       unsubLeavePending();
       unsubOvertimePending();
       unsubWeeklyTrends();
